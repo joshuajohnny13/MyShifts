@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MyShifts</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+    <!-- Babel to compile React syntax in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Your private Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMoeSoLfsNgcopCH76m2wyHYgHnd9aiyM",
+            authDomain: "myshifts-daf0d.firebaseapp.com",
+            projectId: "myshifts-daf0d",
+            storageBucket: "myshifts-daf0d.firebasestorage.app",
+            messagingSenderId: "651463733952",
+            appId: "1:651463733952:web:80ad8813b209ee18627325",
+            measurementId: "G-599ZPDXQV1"
+        };
+
+        // Initialize Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        function MyShiftsApp() {
+            const [user, setUser] = useState(null);
+            const [userData, setUserData] = useState(null);
+            const [activeTab, setActiveTab] = useState('ROSTER');
+            const [shifts, setShifts] = useState([]);
+            const [staff, setStaff] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [baseDate, setBaseDate] = useState(new Date());
+
+            const [upgradeCode, setUpgradeCode] = useState('');
+            const [upgradeError, setUpgradeError] = useState('');
+
+            // Listen for user login state
+            useEffect(() => {
+                const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
+                    setUser(currentUser);
+                    if (currentUser) {
+                        try {
+                            const userDoc = await db.collection("users").doc(currentUser.uid).get();
+                            if (userDoc.exists) {
+                                setUserData(userDoc.data());
+                            } else {
+                                setUserData({ name: currentUser.displayName || currentUser.email, role: 'employee' });
+                            }
+                        } catch (error) {
+                            console.error("Error fetching user data:", error);
+                        }
+                    } else {
+                        setUserData(null);
+                    }
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // Listen for database changes automatically
+            useEffect(() => {
+                if (!user) return;
+                const shiftSub = db.collection("shifts").onSnapshot((snapshot) => {
+                    const shiftData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setShifts(shiftData);
+                });
+                const staffSub = db.collection("staff").onSnapshot((snapshot) => {
+                    const staffData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setStaff(staffData);
+                });
+                return () => {
+                    shiftSub();
+                    staffSub();
+                };
+            }, [user]);
+
+            const handleUpgradeToAdmin = async () => {
+                setUpgradeError('');
+                if (upgradeCode === 'ADMIN2026') {
+                    try {
+                        await db.collection("users").doc(user.uid).set({
+                            name: userData?.name || user.email,
+                            email: user.email,
+                            role: 'admin'
+                        }, { merge: true });
+                        setUserData({ ...userData, role: 'admin' });
+                        setUpgradeCode('');
+                        setUpgradeError('Successfully Upgraded!');
+                        setTimeout(() => setUpgradeError(''), 3000);
+                    } catch (err) {
+                        setUpgradeError('Error upgrading account.');
+                    }
+                } else {
+                    setUpgradeError('Invalid Code');
+                }
+            };
+
+            if (loading) return <div className="min-h-screen flex items-center justify-center text-teal-600 font-bold">Loading MyShifts...</div>;
+            if (!user) return <AuthScreen />;
+
+            return (
+                <div className="max-w-5xl mx-auto bg-white min-h-screen text-gray-800 shadow-2xl relative pb-20 sm:pb-0">
+                    {/* Header */}
+                    <div className="flex justify-between items-center px-4 py-4 bg-teal-700 text-white shadow-md">
+                        <h1 className="text-xl font-black tracking-wider flex items-center gap-2">
+                            <i className="fa-solid fa-calendar w-6 h-6 flex items-center justify-center"></i> MYSHIFTS
+                        </h1>
+                        <div className="flex items-center gap-4">
+                            {/* Legacy Account Upgrade Box */}
+                            {userData?.role !== 'admin' && (
+                                <div className="hidden sm:flex items-center gap-2 bg-teal-800 p-1.5 rounded border border-teal-600">
+                                    <input type="password" placeholder="Admin Code" className="w-24 text-xs p-1 text-gray-900 rounded outline-none" value={upgradeCode} onChange={e => setUpgradeCode(e.target.value)} />
+                                    <button onClick={handleUpgradeToAdmin} className="text-xs font-bold px-2 hover:text-teal-200">Upgrade</button>
+                                    {upgradeError && <span className={`text-[10px] ${upgradeError.includes('Success') ? 'text-green-300' : 'text-red-300'}`}>{upgradeError}</span>}
+                                </div>
+                            )}
+                            <div className="text-right hidden sm:block">
+                                <div className="text-sm font-bold">{userData?.name || user.email}</div>
+                                <div className="text-xs text-teal-200 uppercase tracking-widest">{userData?.role}</div>
+                            </div>
+                            <button onClick={() => auth.signOut()} className="text-xs px-3 py-1.5 bg-teal-800 rounded hover:bg-teal-900 font-bold transition-colors border border-teal-600">Sign Out</button>
+                        </div>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex bg-gray-100 border-b shadow-sm overflow-x-auto">
+                        {[
+                            { id: 'MONTH', icon: 'fa-calendar-days', label: 'Month' },
+                            { id: 'ROSTER', icon: 'fa-table-cells', label: 'Roster' },
+                            { id: 'LIST', icon: 'fa-list', label: 'List' },
+                            { id: 'MANAGE', icon: 'fa-gear', label: 'Manage' }
+                        ].map(tab => {
+                            if (tab.id === 'MANAGE' && userData?.role !== 'admin') return null;
+                            const isActive = activeTab === tab.id;
+                            return (
+                                <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center justify-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-bold uppercase tracking-wider transition-colors border-b-4 ${isActive ? 'border-teal-600 text-teal-700 bg-white' : 'border-transparent text-gray-500 hover:text-teal-600 hover:bg-gray-50'}`}>
+                                    <i className={`fa-solid ${tab.icon} w-4 h-4`}></i> {tab.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Content Area */}
+                    <div className="p-0 sm:p-4 bg-gray-50/50 min-h-[calc(100vh-140px)]">
+                        {userData?.role !== 'admin' && activeTab !== 'MANAGE' && (
+                            <div className="sm:hidden p-3 bg-teal-50 border-b border-teal-100 flex items-center justify-between">
+                                <input type="password" placeholder="Admin Code" className="w-24 text-xs p-1.5 border rounded outline-none" value={upgradeCode} onChange={e => setUpgradeCode(e.target.value)} />
+                                <button onClick={handleUpgradeToAdmin} className="text-xs font-bold text-teal-700 bg-white border border-teal-200 px-3 py-1.5 rounded">Upgrade Role</button>
+                            </div>
+                        )}
+                        {/* Rendering Views and passing userEmail for strict security filtering */}
+                        {activeTab === 'MANAGE' ? (
+                            <ManageView shifts={shifts} staff={staff} userRole={userData?.role} />
+                        ) : activeTab === 'ROSTER' ? (
+                            <RosterGrid shifts={shifts} baseDate={baseDate} setBaseDate={setBaseDate} userName={userData?.name} userEmail={user.email} />
+                        ) : activeTab === 'MONTH' ? (
+                            <MonthView shifts={shifts} baseDate={baseDate} setBaseDate={setBaseDate} userName={userData?.name} userEmail={user.email} />
+                        ) : (
+                            <ListView shifts={shifts} userName={userData?.name} userEmail={user.email} />
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // Shared Filter Logic for strict Email verification
+        const isShiftForUser = (shift, userName, userEmail) => {
+            if (shift.workerEmail === 'all' || shift.worker === 'All' || shift.workerName === 'All Staff') return true;
+            if (shift.workerEmail && userEmail && shift.workerEmail.toLowerCase() === userEmail.toLowerCase()) return true;
+            
+            // Legacy fallback if emails weren't added to older shifts
+            if (shift.worker && userName && shift.worker.toLowerCase() === userName.toLowerCase()) return true;
+            if (shift.workerName && userName && shift.workerName.toLowerCase() === userName.toLowerCase()) return true;
+            
+            return false;
+        };
+
+        function RosterGrid({ shifts, baseDate, setBaseDate, userName, userEmail }) {
+            const generateDays = () => {
+                const days = [];
+                const start = new Date(baseDate);
+                start.setDate(start.getDate() - (start.getDay() === 0 ? 6 : start.getDay() - 1));
+                for (let i = 0; i < 21; i++) {
+                    const d = new Date(start);
+                    d.setDate(start.getDate() + i);
+                    days.push(d);
+                }
+                return days;
+            };
+
+            const calendarDays = generateDays();
+            const weeks = [calendarDays.slice(0, 7), calendarDays.slice(7, 14), calendarDays.slice(14, 21)];
+            const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+            const getShiftForDay = (dateObj) => {
+                const formattedDate = dateObj.toLocaleDateString('en-CA').split('T')[0]; // Safe YYYY-MM-DD
+                return shifts.find(s => s.date === formattedDate && isShiftForUser(s, userName, userEmail));
+            };
+
+            const formatDate = (date) => {
+                return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            };
+
+            return (
+                <div className="w-full bg-white sm:border rounded sm:shadow-sm overflow-hidden">
+                    <div className="p-3 border-b flex justify-between items-center bg-gray-50">
+                        <button onClick={() => setBaseDate(new Date(baseDate.setDate(baseDate.getDate() - 21)))} className="p-1.5 bg-white border rounded shadow-sm hover:bg-gray-100"><i className="fa-solid fa-chevron-left w-5 h-5 text-gray-600 flex items-center justify-center"></i></button>
+                        <div className="text-sm font-bold text-gray-700">
+                            {formatDate(calendarDays[0])} - {formatDate(calendarDays[20])}
+                        </div>
+                        <button onClick={() => setBaseDate(new Date(baseDate.setDate(baseDate.getDate() + 21)))} className="p-1.5 bg-white border rounded shadow-sm hover:bg-gray-100"><i className="fa-solid fa-chevron-right w-5 h-5 text-gray-600 flex items-center justify-center"></i></button>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <div className="min-w-[700px]">
+                            <div className="grid grid-cols-[40px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] bg-slate-500 text-white font-bold text-center text-sm py-1.5">
+                                <div></div>
+                                {dayLabels.map(day => <div key={day}>{day}</div>)}
+                            </div>
+                            {weeks.map((week, wIndex) => {
+                                const firstDay = new Date(week[0].getFullYear(), 0, 1);
+                                const daysToFirstDay = Math.floor((week[0] - firstDay) / (24 * 60 * 60 * 1000));
+                                const weekNum = Math.ceil((week[0].getDay() + 1 + daysToFirstDay) / 7);
+
+                                return (
+                                    <div key={wIndex} className="grid grid-cols-[40px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] border-b border-gray-200">
+                                        <div className="bg-gray-50 flex items-center justify-center text-gray-400 text-xs font-bold border-r border-gray-200">{weekNum}</div>
+                                        {week.map((day, dIndex) => {
+                                            const shift = getShiftForDay(day);
+                                            const isWeekend = dIndex === 5 || dIndex === 6;
+                                            const isToday = new Date().toDateString() === day.toDateString();
+
+                                            return (
+                                                <div key={dIndex} className={`min-h-[100px] border-r border-gray-200 flex flex-col ${shift ? 'bg-[#e0f2fe]' : 'bg-white'} ${isToday ? 'ring-2 ring-teal-500 inset-0 relative z-10' : ''}`}>
+                                                    <div className={`text-right p-1 text-sm ${isWeekend ? 'text-red-600 font-bold' : 'text-gray-500'}`}>{day.getDate()}</div>
+                                                    {shift && (
+                                                        <div className="flex-1 flex flex-col items-center justify-center p-1 text-gray-900 pb-2">
+                                                            <span className="font-extrabold text-[15px] leading-tight">{shift.startTime.replace(':','')}</span>
+                                                            <span className="font-extrabold text-[15px] leading-tight mb-1">{shift.endTime.replace(':','')}</span>
+                                                            <span className="text-[10px] uppercase tracking-wider text-gray-600">{shift.location}</span>
+                                                            <span className="text-[10px] leading-tight text-center px-1 text-gray-500">{shift.role}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function MonthView({ shifts, baseDate, setBaseDate, userName, userEmail }) {
+            const getDaysInMonth = () => {
+                const year = baseDate.getFullYear();
+                const month = baseDate.getMonth();
+                const date = new Date(year, month, 1);
+                const days = [];
+                let startDay = date.getDay() === 0 ? 6 : date.getDay() - 1;
+                for(let i = 0; i < startDay; i++) {
+                    days.push(null);
+                }
+                while (date.getMonth() === month) {
+                    days.push(new Date(date));
+                    date.setDate(date.getDate() + 1);
+                }
+                return days;
+            };
+
+            const days = getDaysInMonth();
+            const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+            const getShiftForDay = (dateObj) => {
+                if(!dateObj) return null;
+                const formattedDate = dateObj.toLocaleDateString('en-CA').split('T')[0];
+                return shifts.find(s => s.date === formattedDate && isShiftForUser(s, userName, userEmail));
+            };
+
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+            return (
+                <div className="w-full bg-white sm:border rounded sm:shadow-sm overflow-hidden">
+                    <div className="p-3 border-b flex justify-between items-center bg-gray-50">
+                        <button onClick={() => setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1))} className="p-1.5 bg-white border rounded shadow-sm hover:bg-gray-100"><i className="fa-solid fa-chevron-left w-5 h-5 text-gray-600 flex items-center justify-center"></i></button>
+                        <div className="text-sm font-bold text-gray-700 uppercase tracking-widest">
+                            {monthNames[baseDate.getMonth()]} {baseDate.getFullYear()}
+                        </div>
+                        <button onClick={() => setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 1))} className="p-1.5 bg-white border rounded shadow-sm hover:bg-gray-100"><i className="fa-solid fa-chevron-right w-5 h-5 text-gray-600 flex items-center justify-center"></i></button>
+                    </div>
+                    <div className="grid grid-cols-7 bg-slate-500 text-white font-bold text-center text-sm py-1.5">
+                        {dayLabels.map(day => <div key={day}>{day}</div>)}
+                    </div>
+                    <div className="grid grid-cols-7 border-l border-gray-200">
+                        {days.map((day, index) => {
+                            const shift = getShiftForDay(day);
+                            const isWeekend = index % 7 === 5 || index % 7 === 6;
+                            if(!day) return <div key={`empty-${index}`} className="min-h-[80px] border-r border-b border-gray-100 bg-gray-50"></div>;
+                            return (
+                                <div key={index} className={`min-h-[80px] border-r border-b border-gray-200 flex flex-col p-1 ${shift ? 'bg-[#e0f2fe]' : 'bg-white'}`}>
+                                    <div className={`text-right text-xs ${isWeekend ? 'text-red-500 font-bold' : 'text-gray-500'}`}>{day.getDate()}</div>
+                                    {shift && (
+                                        <div className="mt-1 text-center flex flex-col items-center">
+                                            <div className="text-xs font-bold text-teal-800 bg-teal-100/50 px-1 rounded w-full">{shift.startTime}-{shift.endTime}</div>
+                                            <div className="text-[9px] text-gray-500 font-bold truncate w-full mt-0.5">{shift.location}</div>
+                                        </div>
+                                    )}
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+            );
+        }
+
+        function ListView({ shifts, userName, userEmail }) {
+            const userShifts = shifts
+                .filter(s => isShiftForUser(s, userName, userEmail))
+                .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            if (userShifts.length === 0) {
+                return <div className="p-12 text-center text-gray-400 font-medium bg-white rounded border border-dashed">No upcoming shifts.</div>;
+            }
+
+            return (
+                <div className="bg-white border rounded shadow-sm overflow-hidden">
+                    <div className="bg-gray-50 p-3 border-b text-xs font-bold text-gray-500 uppercase tracking-widest flex justify-between">
+                        <span>Date</span>
+                        <span>Shift Details</span>
+                    </div>
+                    <div className="divide-y divide-gray-100">
+                        {userShifts.map((shift, idx) => {
+                            const dateObj = new Date(shift.date);
+                            const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dateObj.getDay()];
+                            return (
+                                <div key={shift.id || idx} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-gray-50 transition-colors">
+                                    <div className="flex items-center gap-4 mb-2 sm:mb-0">
+                                        <div className="bg-teal-50 border border-teal-100 text-teal-800 rounded p-2 text-center w-16 shadow-sm">
+                                            <div className="text-xs uppercase font-bold">{dayName}</div>
+                                            <div className="text-lg font-black leading-none">{dateObj.getDate()}</div>
+                                            <div className="text-[10px]">{dateObj.getMonth() + 1}</div>
+                                        </div>
+                                        <div>
+                                            <div className="font-black text-lg text-gray-800">{shift.startTime} <span className="text-gray-400 font-medium px-1">→</span> {shift.endTime}</div>
+                                            <div className="text-sm text-gray-500 flex items-center gap-2 mt-0.5">
+                                                <span className="font-bold text-teal-700">{shift.location}</span> • {shift.role}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+            );
+        }
+
+        function ManageView({ shifts, staff, userRole }) {
+            const emptyShift = { date: '', startTime: '', endTime: '', location: '', role: '', worker: '', workerName: '', workerEmail: '' };
+            const [newShift, setNewShift] = useState(emptyShift);
+            const [editingId, setEditingId] = useState(null);
+            const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+            const [confirmStaffId, setConfirmStaffId] = useState(null);
+            
+            // New Staff Addition States
+            const [newStaffName, setNewStaffName] = useState('');
+            const [newStaffEmail, setNewStaffEmail] = useState('');
+            const [error, setError] = useState('');
+            
+            if (userRole !== 'admin') return (
+                <div className="p-12 text-center flex flex-col items-center justify-center">
+                    <i className="fa-solid fa-shield-halved text-4xl text-red-400 mb-4"></i>
+                    <h2 className="text-xl font-bold text-gray-800">Access Denied</h2>
+                    <p className="text-sm text-gray-500 mt-2">Only administrators can manage the schedule.</p>
+                </div>
+            );
+
+            const handleSaveShift = async () => {
+                setError('');
+                if(!newShift.date || !newShift.startTime || !newShift.endTime || (!newShift.workerEmail && !newShift.worker)) {
+                    setError("Please fill out Date, Times, and select a Worker.");
+                    return;
+                }
+                try {
+                    if (editingId) {
+                        await db.collection("shifts").doc(editingId).update(newShift);
+                        setEditingId(null);
+                    } else {
+                        await db.collection("shifts").add(newShift);
+                    }
+                    setNewShift(emptyShift);
+                } catch(err) {
+                    setError(err.message);
+                }
+            };
+
+            const handleEditShift = (shift) => {
+                setNewShift({
+                    ...emptyShift, // default structure
+                    ...shift       // overwrite with existing shift data
+                });
+                setEditingId(shift.id);
+                setConfirmDeleteId(null);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            const handleAddStaff = async () => {
+                if(!newStaffName.trim() || !newStaffEmail.trim()) {
+                    setError("Please enter both Name and Email to properly link an employee.");
+                    return;
+                }
+                try {
+                    await db.collection("staff").add({ 
+                        name: newStaffName.trim(),
+                        email: newStaffEmail.trim().toLowerCase()
+                    });
+                    setNewStaffName('');
+                    setNewStaffEmail('');
+                    setError('');
+                } catch(err) {
+                    setError("Failed to add staff: " + err.message);
+                }
+            };
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+                    {/* Forms Column */}
+                    <div className="lg:col-span-1 space-y-6">
+                        <div className={`bg-white p-5 rounded-xl border shadow-sm transition-all ${editingId ? 'ring-2 ring-teal-500' : ''}`}>
+                            <h2 className="text-sm font-black text-gray-800 mb-4 border-b pb-2 uppercase tracking-widest flex items-center justify-between">
+                                {editingId ? 'Edit Existing Shift' : 'Create New Shift'}
+                                {editingId && <button onClick={() => {setEditingId(null); setNewShift(emptyShift);}} className="text-xs text-gray-400 hover:text-red-500 font-normal bg-gray-100 px-2 py-1 rounded">Cancel Edit</button>}
+                            </h2>
+                            {error && <div className="bg-red-50 text-red-600 p-2 text-xs rounded mb-4 font-bold border border-red-100">{error}</div>}
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Worker (Linked via Email)</label>
+                                    <select 
+                                        className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none font-bold text-teal-800" 
+                                        value={newShift.workerEmail || newShift.worker || ''} 
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            if (val === 'all') {
+                                                setNewShift({...newShift, workerEmail: 'all', workerName: 'All Staff', worker: 'All'});
+                                            } else {
+                                                const staffMem = staff.find(s => s.email === val || s.name === val);
+                                                setNewShift({
+                                                    ...newShift, 
+                                                    workerEmail: staffMem?.email || '', 
+                                                    workerName: staffMem?.name || val,
+                                                    worker: staffMem?.name || val // Legacy Fallback
+                                                });
+                                            }
+                                        }}
+                                    >
+                                        <option value="">-- Select Staff --</option>
+                                        <option value="all">All Staff (Everyone)</option>
+                                        {staff.map(s => <option key={s.id} value={s.email || s.name}>{s.name} {s.email ? `(${s.email})` : ''}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Date</label>
+                                    <input type="date" className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.date} onChange={e => setNewShift({...newShift, date: e.target.value})} />
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Start Time</label>
+                                        <input type="time" className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.startTime} onChange={e => setNewShift({...newShift, startTime: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">End Time</label>
+                                        <input type="time" className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.endTime} onChange={e => setNewShift({...newShift, endTime: e.target.value})} />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Location Code</label>
+                                        <input type="text" placeholder="e.g. TNT" className="w-full p-2 border border-gray-200 rounded text-sm uppercase focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.location} onChange={e => setNewShift({...newShift, location: e.target.value.toUpperCase()})} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Role / Dept</label>
+                                        <input type="text" placeholder="e.g. MPS" className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.role} onChange={e => setNewShift({...newShift, role: e.target.value})} />
+                                    </div>
+                                </div>
+                            </div>
+                            <button onClick={handleSaveShift} className={`mt-5 w-full text-white p-3 rounded font-black uppercase tracking-widest shadow-md transition-all active:scale-95 ${editingId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-teal-600 hover:bg-teal-700'}`}>
+                                {editingId ? 'Update Shift' : 'Publish Shift'}
+                            </button>
+                        </div>
+
+                        <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-sm">
+                            <h2 className="text-sm font-black text-gray-800 mb-3 uppercase tracking-widest flex items-center gap-2"><i className="fa-solid fa-user-plus w-4 h-4"></i> Staff Directory</h2>
+                            <p className="text-[10px] text-gray-500 mb-3">Adding an email ensures shifts sync securely to that employee's account.</p>
+                            <div className="flex flex-col gap-2 mb-4">
+                                <input type="text" placeholder="Employee Name" className="p-2 border border-gray-300 rounded text-sm outline-none focus:border-teal-500" value={newStaffName} onChange={e => setNewStaffName(e.target.value)} />
+                                <input type="email" placeholder="Employee Email" className="p-2 border border-gray-300 rounded text-sm outline-none focus:border-teal-500" value={newStaffEmail} onChange={e => setNewStaffEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddStaff()} />
+                                <button onClick={handleAddStaff} className="bg-gray-800 text-white px-3 py-2 rounded text-xs font-bold hover:bg-black mt-1 shadow-sm">Add to Directory</button>
+                            </div>
+                            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-200">
+                                {staff.map(s => (
+                                    <div key={s.id} className="bg-white border border-gray-200 text-gray-700 px-2 py-1.5 rounded text-xs shadow-sm flex flex-col w-full sm:w-auto min-w-[140px]">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <span className="font-bold truncate">{s.name}</span>
+                                            {confirmStaffId === s.id ? (
+                                                <div className="flex items-center gap-1 bg-red-50 rounded px-1 shrink-0">
+                                                    <button onClick={() => db.collection("staff").doc(s.id).delete()} className="text-[10px] text-red-600 hover:underline font-bold">Yes</button>
+                                                    <span className="text-gray-300">|</span>
+                                                    <button onClick={() => setConfirmStaffId(null)} className="text-[10px] text-gray-500 hover:underline">No</button>
+                                                </div>
+                                            ) : (
+                                                <button onClick={() => setConfirmStaffId(s.id)} className="text-gray-400 hover:text-red-500 w-4 h-4 flex items-center justify-center rounded hover:bg-red-50 shrink-0">×</button>
+                                            )}
+                                        </div>
+                                        <span className="text-[9px] text-gray-400 truncate">{s.email || 'No email linked'}</span>
+                                    </div>
+                                ))}
+                                {staff.length === 0 && <span className="text-xs text-gray-400 italic">No staff added.</span>}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Database Column */}
+                    <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col h-[600px]">
+                        <div className="bg-gray-50 p-4 border-b">
+                            <h3 className="font-black text-gray-800 uppercase tracking-widest">Active Shift Database</h3>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                            {shifts.length === 0 ? <p className="text-sm text-gray-400 text-center py-10 font-medium">No shifts found in database.</p> : null}
+                            {shifts.sort((a,b) => new Date(b.date) - new Date(a.date)).map(s => (
+                                <div key={s.id} className={`flex flex-col sm:flex-row justify-between sm:items-center p-4 border rounded-lg transition-colors ${editingId === s.id ? 'bg-orange-50 border-orange-200' : 'hover:bg-gray-50 border-gray-100'}`}>
+                                    <div className="flex items-center gap-4 mb-3 sm:mb-0">
+                                        <div className="bg-gray-100 text-gray-600 font-bold px-3 py-2 rounded text-sm font-mono border w-24 text-center shrink-0">{s.date}</div>
+                                        <div className="min-w-0">
+                                            <div className="font-black text-teal-800 truncate">{s.workerName || s.worker}</div>
+                                            <div className="text-[10px] text-gray-400 truncate -mt-0.5 mb-1">{s.workerEmail !== 'all' ? s.workerEmail : 'All Staff'}</div>
+                                            <div className="text-xs text-gray-500 font-bold">
+                                                {s.startTime} - {s.endTime} <span className="mx-1">•</span> <span className="text-gray-800">{s.location}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 justify-end items-center shrink-0">
+                                        <button onClick={() => handleEditShift(s)} className="flex items-center gap-1 bg-white border border-gray-200 text-gray-600 hover:text-teal-600 hover:border-teal-300 px-3 py-1.5 rounded text-xs font-bold transition-all shadow-sm">
+                                            <i className="fa-solid fa-pen w-3 h-3 flex items-center justify-center"></i> Edit
+                                        </button>
+                                        {confirmDeleteId === s.id ? (
+                                            <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded px-2 py-1 shadow-sm">
+                                                <span className="text-[10px] font-bold text-red-600 uppercase">Delete?</span>
+                                                <button onClick={() => db.collection("shifts").doc(s.id).delete()} className="text-xs font-bold text-red-700 hover:underline">Yes</button>
+                                                <span className="text-gray-300">|</span>
+                                                <button onClick={() => setConfirmDeleteId(null)} className="text-xs font-bold text-gray-500 hover:underline">No</button>
+                                            </div>
+                                        ) : (
+                                            <button onClick={() => setConfirmDeleteId(s.id)} className="flex items-center justify-center gap-1 bg-white border border-red-100 text-red-500 hover:bg-red-50 w-8 h-8 rounded transition-all shadow-sm">
+                                                <i className="fa-solid fa-trash w-3 h-3 flex items-center justify-center"></i>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function AuthScreen() {
+            const [isLogin, setIsLogin] = useState(true);
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [name, setName] = useState('');
+            const [role, setRole] = useState('employee');
+            const [adminCode, setAdminCode] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleAuth = async (e) => {
+                e.preventDefault();
+                setError('');
+                setLoading(true);
+
+                try {
+                    if (isLogin) {
+                        await auth.signInWithEmailAndPassword(email.trim(), password);
+                    } else {
+                        if (role === 'admin' && adminCode !== 'ADMIN2026') {
+                            throw new Error("Invalid Admin Passcode.");
+                        }
+                        if (!name) throw new Error("Full Name is required.");
+                        
+                        const cred = await auth.createUserWithEmailAndPassword(email.trim(), password);
+                        await db.collection("users").doc(cred.user.uid).set({
+                            name: name.trim(), 
+                            email: email.trim().toLowerCase(), 
+                            role
+                        });
+                    }
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
+                    <div className="sm:mx-auto sm:w-full sm:max-w-md">
+                        <div className="flex justify-center text-teal-600 mb-2">
+                            <i className="fa-solid fa-calendar text-5xl"></i>
+                        </div>
+                        <h2 className="text-center text-3xl font-extrabold text-gray-900">MyShifts</h2>
+                        <p className="mt-2 text-center text-sm text-gray-600">Sign in to access your schedule</p>
+                    </div>
+
+                    <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+                        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10 border border-gray-100">
+                            {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4 text-sm font-bold">{error}</div>}
+                            
+                            <form className="space-y-6" onSubmit={handleAuth}>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest">Email</label>
+                                    <input type="email" required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 font-medium" value={email} onChange={e => setEmail(e.target.value)} />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest">Password</label>
+                                    <input type="password" required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 font-medium" value={password} onChange={e => setPassword(e.target.value)} />
+                                </div>
+                                {!isLogin && (
+                                    <div className="space-y-4 bg-gray-50 p-4 border rounded-md">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest">Full Name</label>
+                                            <p className="text-[10px] text-gray-400 mb-1">Provide your name for display purposes.</p>
+                                            <input type="text" required={!isLogin} className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 font-medium" value={name} onChange={e => setName(e.target.value)} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest">Account Role</label>
+                                            <select className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-teal-500 focus:border-teal-500 font-medium bg-white" value={role} onChange={e => setRole(e.target.value)}>
+                                                <option value="employee">Standard Employee</option>
+                                                <option value="admin">Administrator</option>
+                                            </select>
+                                        </div>
+                                        {role === 'admin' && (
+                                            <div className="bg-red-50 p-3 rounded border border-red-200">
+                                                <label className="block text-xs font-bold text-red-700 uppercase tracking-widest">Admin Passcode</label>
+                                                <input type="password" placeholder="Enter secret code" required={role === 'admin'} className="mt-1 block w-full px-3 py-2 border border-red-300 rounded-md focus:outline-none focus:ring-red-500 focus:border-red-500 font-mono" value={adminCode} onChange={e => setAdminCode(e.target.value)} />
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                <button type="submit" disabled={loading} className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-md text-sm font-bold uppercase tracking-widest text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:opacity-50 transition-colors">
+                                    {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
+                                </button>
+                            </form>
+                            <div className="mt-6 text-center">
+                                <button onClick={() => setIsLogin(!isLogin)} type="button" className="text-sm font-bold text-teal-600 hover:text-teal-500 transition-colors">
+                                    {isLogin ? "Need an account? Sign up" : "Already registered? Sign in"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<MyShiftsApp />);
+    </script>
+</body>
+</html>
