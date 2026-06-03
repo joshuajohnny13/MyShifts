@@ -917,8 +917,8 @@
                     </div>
 
                     <div className="p-0 sm:p-4 bg-gray-50/50 min-h-[calc(100vh-140px)]">
-                        {activeTab === 'MONTH' && <MonthView shifts={shifts} baseDate={baseDate} setBaseDate={setBaseDate} userData={userData} onShiftClick={setSelectedShift} />}
-                        {activeTab === 'ROSTER' && <RosterGrid shifts={shifts} baseDate={baseDate} setBaseDate={setBaseDate} userName={userData?.name} userEmail={user.email} onShiftClick={setSelectedShift} />}
+                        {activeTab === 'MONTH' && <MonthView shifts={shifts} baseDate={baseDate} setBaseDate={setBaseDate} userName={userData?.name} userEmail={user?.email} onShiftClick={setSelectedShift} />}
+                        {activeTab === 'ROSTER' && <RosterGrid shifts={shifts} baseDate={baseDate} setBaseDate={setBaseDate} userName={userData?.name} userEmail={user?.email} onShiftClick={setSelectedShift} />}
                         {activeTab === 'DAY' && <DayView shifts={shifts} onShiftClick={setSelectedShift} />}
                         {activeTab === 'TEAM' && <ShiftListView shifts={shifts} staff={staff} onShiftClick={setSelectedShift} />}
                         {activeTab === 'MANAGE' && userData?.role === 'admin' && <ManageView shifts={shifts} staff={staff} userRole={userData?.role} db={db} />}
