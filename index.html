@@ -1,936 +1,973 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MyShifts</title>
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="theme-color" content="#0f766e">
-    
-    <link rel="apple-touch-icon" href="icon.png">
-    <link rel="icon" type="image/png" href="icon.png">
-    <link rel="manifest" href="manifest.json">
-    
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MyShifts</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0f766e">
+    
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="icon" type="image/png" href="icon.png">
+    <link rel="manifest" href="manifest.json">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <script type="importmap">
-      {
-        "imports": {
-          "firebase/app": "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js",
-          "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js",
-          "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js"
-        }
-      }
-    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "firebase/app": "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js",
+          "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js",
+          "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js"
+        }
+      }
+    </script>
 
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-highlight-color: transparent; }
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-    </style>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-highlight-color: transparent; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
 </head>
 <body>
-    <div id="root"></div>
-
-    <script type="text/babel" data-type="module">
-        import { initializeApp } from "firebase/app";
-        import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
-        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
-
-        const { useState, useEffect } = React;
-
-        // --- FIREBASE CONFIGURATION ---
-        const firebaseConfig = {
-            apiKey: "AIzaSyCMoeSoLfsNgcopCH76m2wyHYgHnd9aiyM",
-            authDomain: "myshifts-daf0d.firebaseapp.com",
-            projectId: "myshifts-daf0d",
-            storageBucket: "myshifts-daf0d.firebasestorage.app",
-            messagingSenderId: "651463733952",
-            appId: "1:651463733952:web:80ad8813b209ee18627325",
-            measurementId: "G-599ZPDXQV1"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-
-        // --- UTILITIES ---
-        const formatLocalYYYYMMDD = (dateObj) => {
-            if (!dateObj) return '';
-            const y = dateObj.getFullYear();
-            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-            const d = String(dateObj.getDate()).padStart(2, '0');
-            return `${y}-${m}-${d}`;
-        };
-
-        const parseLocalYYYYMMDD = (dateStr) => {
-            if (!dateStr) return new Date();
-            const [y, m, d] = dateStr.split('-').map(Number);
-            return new Date(y, m - 1, d);
-        };
-
-        const calculateShiftHours = (start, end) => {
-            if (!start || !end) return 0;
-            const [h1, m1] = start.split(':').map(Number);
-            const [h2, m2] = end.split(':').map(Number);
-            let startMin = h1 * 60 + m1;
-            let endMin = h2 * 60 + m2;
-            if (endMin <= startMin) endMin += 24 * 60; 
-            return (endMin - startMin) / 60;
-        };
-
-        const isShiftForUser = (shift, userEmail, userName) => {
-            if (shift.workerEmail === 'all' || shift.worker === 'All') return true;
-            if (shift.workerEmail && userEmail && shift.workerEmail.toLowerCase() === userEmail.toLowerCase()) return true;
-            if (shift.worker && userName && shift.worker.toLowerCase() === userName.toLowerCase()) return true;
-            return false;
-        };
-
-        // --- COMPONENTS ---
-
-        function AuthScreen() {
-            const [isLogin, setIsLogin] = useState(true);
-            const [email, setEmail] = useState('');
-            const [password, setPassword] = useState('');
-            const [name, setName] = useState('');
-            const [role, setRole] = useState('employee');
-            const [adminCode, setAdminCode] = useState('');
-            const [error, setError] = useState('');
-            const [loading, setLoading] = useState(false);
-
-            const handleAuth = async (e) => {
-                e.preventDefault();
-                setError('');
-                setLoading(true);
-                try {
-                    if (isLogin) {
-                        await signInWithEmailAndPassword(auth, email, password);
-                    } else {
-                        if (role === 'admin' && adminCode !== 'ADMIN2026') throw new Error("Invalid Admin Passcode.");
-                        if (!name) throw new Error("Full Name is required.");
-                        const cred = await createUserWithEmailAndPassword(auth, email, password);
-                        await setDoc(doc(db, "users", cred.user.uid), { name, email, role });
-                    }
-                } catch (err) {
-                    setError(err.message);
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            return (
-                <div className="min-h-screen flex items-center justify-center bg-teal-800 p-4">
-                    <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md">
-                        <div className="text-center mb-8">
-                            <i className="fa-regular fa-calendar-check text-5xl text-teal-600 mb-3"></i>
-                            <h1 className="text-3xl font-black text-gray-800 tracking-tight">MyShifts</h1>
-                            <p className="text-gray-500 mt-2 text-sm">{isLogin ? 'Welcome back, please sign in.' : 'Create your account to view shifts.'}</p>
-                        </div>
-                        {error && <div className="bg-red-50 text-red-600 p-3 rounded mb-4 text-sm font-medium border border-red-200">{error}</div>}
-                        <form onSubmit={handleAuth} className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Email</label>
-                                <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3 border border-gray-300 rounded focus:ring-2 focus:ring-teal-500 outline-none" />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Password</label>
-                                <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded focus:ring-2 focus:ring-teal-500 outline-none" />
-                            </div>
-                            {!isLogin && (
-                                <div className="space-y-4 bg-gray-50 p-4 border rounded">
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Full Name</label>
-                                        <input type="text" required={!isLogin} value={name} onChange={e => setName(e.target.value)} className="w-full p-3 border border-gray-300 rounded focus:ring-2 focus:ring-teal-500 outline-none" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Account Role</label>
-                                        <select value={role} onChange={e => setRole(e.target.value)} className="w-full p-3 border border-gray-300 rounded focus:ring-2 focus:ring-teal-500 outline-none bg-white">
-                                            <option value="employee">Standard Employee</option>
-                                            <option value="admin">Administrator</option>
-                                        </select>
-                                    </div>
-                                    {role === 'admin' && (
-                                        <div className="bg-red-50 p-3 rounded border border-red-200">
-                                            <label className="block text-xs font-bold text-red-700 uppercase tracking-widest mb-1">Admin Passcode</label>
-                                            <input type="password" required={role === 'admin'} value={adminCode} onChange={e => setAdminCode(e.target.value)} className="w-full p-3 border border-red-300 rounded focus:ring-2 focus:ring-red-500 outline-none font-mono" placeholder="Secret Code" />
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                            <button type="submit" disabled={loading} className="w-full bg-teal-600 text-white font-bold py-3 rounded hover:bg-teal-700 transition-colors shadow-md disabled:opacity-50">
-                                {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
-                            </button>
-                        </form>
-                        <div className="text-center mt-6">
-                            <button onClick={() => setIsLogin(!isLogin)} className="text-teal-600 text-sm font-semibold hover:underline">
-                                {isLogin ? "Need an account? Sign up" : "Already have an account? Sign in"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        function ShiftDetailsModal({ shift, onClose }) {
-            if (!shift) return null;
-            const hours = calculateShiftHours(shift.startTime, shift.endTime);
-            const dateObj = parseLocalYYYYMMDD(shift.date);
-            const dateStr = dateObj.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
-            return (
-                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity" onClick={onClose}>
-                    <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full overflow-hidden" onClick={e => e.stopPropagation()}>
-                        <div className="bg-teal-700 text-white p-4 flex justify-between items-center shadow-inner">
-                            <h3 className="font-black tracking-wider uppercase text-sm">Shift Details</h3>
-                            <button onClick={onClose} className="text-teal-200 hover:text-white transition-colors"><i className="fa-solid fa-xmark text-xl"></i></button>
-                        </div>
-                        <div className="p-6 space-y-4">
-                            <div className="text-center border-b border-gray-100 pb-5">
-                                <div className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-2">{dateStr}</div>
-                                <div className="text-xl font-bold text-teal-700 mb-2">{shift.workerName || shift.worker || 'Open Shift'}</div>
-                                <div className="text-4xl font-black text-gray-800 tracking-tighter flex items-center justify-center gap-2">
-                                    {shift.startTime} <span className="text-teal-400 text-2xl">→</span> {shift.endTime}
-                                </div>
-                                <div className="mt-3 inline-block bg-teal-50 text-teal-800 border border-teal-200 px-4 py-1.5 rounded-full font-black text-sm shadow-sm">
-                                    {hours.toFixed(2)} Hours
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3 pt-2">
-                                <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-center shadow-sm">
-                                    <i className="fa-solid fa-location-dot text-gray-300 mb-1.5 block text-xl"></i>
-                                    <div className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">Location</div>
-                                    <div className="font-black text-gray-800 text-lg truncate px-1">{shift.location || 'N/A'}</div>
-                                </div>
-                                <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-center shadow-sm">
-                                    <i className="fa-solid fa-user-tag text-gray-300 mb-1.5 block text-xl"></i>
-                                    <div className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">Role</div>
-                                    <div className="font-black text-gray-800 text-lg truncate px-1" title={shift.role}>{shift.role || 'N/A'}</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        function RosterGrid({ shifts, baseDate, setBaseDate, userName, userEmail, onShiftClick }) {
-            const getAnchorOffsetDays = (currentBase) => {
-                const anchor = new Date('2026-06-08T00:00:00');
-                const diffTime = currentBase.getTime() - anchor.getTime();
-                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                const cycleOffset = diffDays % 21;
-                return cycleOffset >= 0 ? cycleOffset : 21 + cycleOffset;
-            };
-
-            const cycleStart = new Date(baseDate);
-            cycleStart.setDate(cycleStart.getDate() - getAnchorOffsetDays(baseDate));
-
-            const calendarDays = Array.from({ length: 21 }).map((_, i) => {
-                const d = new Date(cycleStart);
-                d.setDate(d.getDate() + i);
-                return d;
-            });
-
-            const weeks = [calendarDays.slice(0, 7), calendarDays.slice(7, 14), calendarDays.slice(14, 21)];
-            const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-            const getShiftForDay = (dateObj) => {
-                const formattedDate = formatLocalYYYYMMDD(dateObj);
-                return shifts.find(s => s.date === formattedDate && isShiftForUser(s, userEmail, userName));
-            };
-
-            const formatDate = (date) => date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-            let totalCycleHours = 0;
-
-            return (
-                <div className="w-full bg-white sm:border rounded sm:shadow-sm overflow-hidden">
-                    <div className="p-2 sm:p-4 border-b flex justify-between items-center bg-gray-50">
-                        <button onClick={() => setBaseDate(new Date(baseDate.setDate(baseDate.getDate() - 21)))} className="p-1 sm:p-2 bg-white border rounded shadow-sm hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-left"></i></button>
-                        <div className="text-xs sm:text-lg font-black text-gray-800 uppercase tracking-widest">
-                            {formatDate(calendarDays[0])} - {formatDate(calendarDays[20])}
-                        </div>
-                        <button onClick={() => setBaseDate(new Date(baseDate.setDate(baseDate.getDate() + 21)))} className="p-1 sm:p-2 bg-white border rounded shadow-sm hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-right"></i></button>
-                    </div>
-
-                    <div className="overflow-hidden sm:overflow-x-auto">
-                        <div className="w-full sm:min-w-[700px]">
-                            <div className="grid grid-cols-[25px_repeat(7,minmax(0,1fr))] sm:grid-cols-[40px_repeat(7,minmax(0,1fr))] bg-slate-500 text-white font-bold text-center text-[10px] sm:text-sm py-1 sm:py-2">
-                                <div></div>
-                                {dayLabels.map(day => <div key={day} className="truncate px-0.5">{day}</div>)}
-                            </div>
-                            {weeks.map((week, wIndex) => {
-                                const firstDay = new Date(week[0].getFullYear(), 0, 1);
-                                const daysToFirstDay = Math.floor((week[0] - firstDay) / (24 * 60 * 60 * 1000));
-                                const weekNum = Math.ceil((week[0].getDay() + 1 + daysToFirstDay) / 7);
-
-                                return (
-                                    <div key={wIndex} className="grid grid-cols-[25px_repeat(7,minmax(0,1fr))] sm:grid-cols-[40px_repeat(7,minmax(0,1fr))] border-b border-gray-200">
-                                        <div className="bg-gray-50 flex items-center justify-center text-gray-400 text-[9px] sm:text-xs font-bold border-r border-gray-200">{weekNum}</div>
-                                        {week.map((day, dIndex) => {
-                                            const shift = getShiftForDay(day);
-                                            if (shift) totalCycleHours += calculateShiftHours(shift.startTime, shift.endTime);
-                                            const isWeekend = dIndex === 5 || dIndex === 6;
-                                            const isToday = formatLocalYYYYMMDD(new Date()) === formatLocalYYYYMMDD(day);
-
-                                            return (
-                                                <div key={dIndex} onClick={() => shift && onShiftClick(shift)} className={`min-h-[70px] sm:min-h-[100px] border-r border-gray-200 flex flex-col ${shift ? 'bg-[#e0f2fe] cursor-pointer hover:bg-blue-100 transition-colors' : 'bg-white'} ${isToday ? 'ring-2 ring-teal-500 inset-0 relative z-10' : ''}`}>
-                                                    <div className={`text-right p-0.5 sm:p-1 text-[10px] sm:text-sm ${isWeekend ? 'text-red-600 font-bold' : 'text-gray-500'}`}>{day.getDate()}</div>
-                                                    {shift && (
-                                                        <div className="flex-1 flex flex-col items-center justify-center p-0.5 sm:p-1 text-gray-900 pb-1 sm:pb-2 overflow-hidden">
-                                                            <span className="font-extrabold text-[11px] sm:text-[15px] leading-none sm:leading-tight">{shift.startTime.replace(':','')}</span>
-                                                            <span className="font-extrabold text-[11px] sm:text-[15px] leading-none sm:leading-tight mb-0.5 sm:mb-1">{shift.endTime.replace(':','')}</span>
-                                                            <span className="text-[8px] sm:text-[10px] uppercase tracking-tighter sm:tracking-wider text-gray-600 truncate w-full text-center px-0.5">{shift.location}</span>
-                                                            <span className="hidden sm:block text-[10px] leading-tight text-center px-1 text-gray-500 truncate w-full">{shift.role}</span>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                    <div className="p-2 sm:p-4 bg-teal-50 border-t text-right text-xs sm:text-base font-black text-teal-800">
-                        Cycle Total: {totalCycleHours.toFixed(2)} Hours
-                    </div>
-                </div>
-            );
-        }
-
-        function MonthView({ shifts, baseDate, setBaseDate, userName, userEmail, onShiftClick }) {
-            const getDaysInMonth = () => {
-                const year = baseDate.getFullYear();
-                const month = baseDate.getMonth();
-                const date = new Date(year, month, 1);
-                const days = [];
-                let startDay = date.getDay() === 0 ? 6 : date.getDay() - 1;
-                for(let i = 0; i < startDay; i++) days.push(null);
-                while (date.getMonth() === month) {
-                    days.push(new Date(date));
-                    date.setDate(date.getDate() + 1);
-                }
-                return days;
-            };
-
-            const days = getDaysInMonth();
-            const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-            const getShiftForDay = (dateObj) => {
-                if(!dateObj) return null;
-                const formattedDate = formatLocalYYYYMMDD(dateObj);
-                return shifts.find(s => s.date === formattedDate && isShiftForUser(s, userEmail, userName));
-            };
-
-            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-            let totalMonthHours = 0;
-
-            return (
-                <div className="w-full bg-white sm:border rounded sm:shadow-sm overflow-hidden">
-                    <div className="p-2 sm:p-4 border-b flex justify-between items-center bg-gray-50">
-                        <button onClick={() => setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1))} className="p-1 sm:p-2 bg-white border rounded shadow-sm hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-left"></i></button>
-                        <div className="text-xs sm:text-lg font-black text-gray-800 uppercase tracking-widest text-center">
-                            <div>{monthNames[baseDate.getMonth()]} {baseDate.getFullYear()}</div>
-                        </div>
-                        <button onClick={() => setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 1))} className="p-1 sm:p-2 bg-white border rounded shadow-sm hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-right"></i></button>
-                    </div>
-
-                    <div className="grid grid-cols-7 bg-slate-500 text-white font-bold text-center text-[10px] sm:text-sm py-1 sm:py-2">
-                        {dayLabels.map(day => <div key={day} className="truncate px-0.5">{day}</div>)}
-                    </div>
-                    <div className="grid grid-cols-7 border-l border-gray-200">
-                        {days.map((day, index) => {
-                            const shift = getShiftForDay(day);
-                            if (shift) totalMonthHours += calculateShiftHours(shift.startTime, shift.endTime);
-                            const isWeekend = index % 7 === 5 || index % 7 === 6;
-                            
-                            if(!day) return <div key={`empty-${index}`} className="min-h-[50px] sm:min-h-[80px] border-r border-b border-gray-100 bg-gray-50"></div>;
-
-                            const isToday = formatLocalYYYYMMDD(day) === formatLocalYYYYMMDD(new Date());
-
-                            return (
-                                <div key={index} onClick={() => shift && onShiftClick(shift)} className={`min-h-[50px] sm:min-h-[80px] border-r border-b border-gray-200 flex flex-col p-0.5 sm:p-1 ${shift ? 'bg-[#e0f2fe] cursor-pointer hover:bg-blue-100 transition-colors' : 'bg-white'} ${isToday ? 'ring-2 ring-teal-500 inset-0 relative z-10' : ''}`}>
-                                    <div className={`text-right text-[10px] sm:text-xs ${isWeekend ? 'text-red-500 font-bold' : 'text-gray-500'}`}>{day.getDate()}</div>
-                                    {shift && (
-                                        <div className="mt-auto sm:mt-1 text-center flex flex-col items-center w-full overflow-hidden">
-                                            <div className="text-[9px] sm:text-xs font-bold text-teal-800 bg-teal-100/50 sm:px-1 rounded w-full truncate leading-tight">
-                                                <span className="sm:hidden">{shift.startTime.split(':')[0]}-{shift.endTime.split(':')[0]}</span>
-                                                <span className="hidden sm:inline">{shift.startTime}-{shift.endTime}</span>
-                                            </div>
-                                            <div className="hidden sm:block text-[9px] text-gray-500 font-bold truncate w-full mt-0.5">{shift.location}</div>
-                                        </div>
-                                    )}
-                                </div>
-                            )
-                        })}
-                    </div>
-                    <div className="p-2 sm:p-4 bg-teal-50 border-t text-right text-xs sm:text-base font-black text-teal-800">
-                        Monthly Total: {totalMonthHours.toFixed(2)} Hours
-                    </div>
-                </div>
-            );
-        }
-
-        function DayView({ shifts, onShiftClick }) {
-            const [selectedDate, setSelectedDate] = useState(formatLocalYYYYMMDD(new Date()));
-
-            const dayShifts = shifts
-                .filter(s => s.date === selectedDate)
-                .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
-
-            const dateObj = parseLocalYYYYMMDD(selectedDate);
-            const formattedDate = dateObj.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
-            const prevDay = () => {
-                const d = parseLocalYYYYMMDD(selectedDate);
-                d.setDate(d.getDate() - 1);
-                setSelectedDate(formatLocalYYYYMMDD(d));
-            };
-
-            const nextDay = () => {
-                const d = parseLocalYYYYMMDD(selectedDate);
-                d.setDate(d.getDate() + 1);
-                setSelectedDate(formatLocalYYYYMMDD(d));
-            };
-
-            return (
-                <div className="bg-white border sm:rounded-xl shadow-sm overflow-hidden">
-                    <div className="bg-gray-50 p-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="flex items-center w-full sm:w-auto justify-between gap-4">
-                            <button onClick={prevDay} className="px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-left"></i></button>
-                            <h3 className="font-black text-gray-800 uppercase tracking-widest text-sm text-center flex-1 sm:flex-none">{formattedDate}</h3>
-                            <button onClick={nextDay} className="px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-right"></i></button>
-                        </div>
-                        <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="w-full sm:w-auto p-2 border border-gray-300 rounded text-sm font-bold text-gray-700 outline-none focus:border-teal-500" />
-                    </div>
-                    <div className="divide-y divide-gray-100">
-                        {dayShifts.length === 0 ? (
-                            <div className="p-12 text-center text-gray-400 font-medium bg-white">No shifts scheduled for this day.</div>
-                        ) : (
-                            dayShifts.map(shift => {
-                                const hours = calculateShiftHours(shift.startTime, shift.endTime);
-                                return (
-                                    <div key={shift.id} onClick={() => onShiftClick(shift)} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-blue-50 cursor-pointer transition-colors group">
-                                        <div className="flex items-center gap-4">
-                                            <div className="bg-teal-50 border border-teal-100 text-teal-800 rounded p-2 text-center shadow-sm min-w-[80px] group-hover:bg-white transition-colors">
-                                                <div className="font-black text-lg leading-none">{shift.startTime}</div>
-                                                <div className="text-[10px] font-bold text-gray-500 mt-1">TO {shift.endTime}</div>
-                                            </div>
-                                            <div>
-                                                <div className="font-black text-lg text-gray-800">{shift.workerName || shift.worker}</div>
-                                                <div className="text-sm text-gray-500 flex items-center gap-2 mt-0.5">
-                                                    <span className="font-bold text-teal-700 uppercase">{shift.location}</span> • {shift.role}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="mt-3 sm:mt-0 text-right sm:text-left">
-                                            <span className="inline-block bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-1 rounded border">{hours.toFixed(1)} hrs</span>
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        )}
-                    </div>
-                </div>
-            );
-        }
-
-        // --- NEW HORIZONTAL SHIFT LIST (TEAM VIEW) ---
-        function ShiftListView({ shifts, staff, onShiftClick }) {
-            const [baseDate, setBaseDate] = useState(new Date());
-
-            const getAnchorOffsetDays = (currentBase) => {
-                const anchor = new Date('2026-06-08T00:00:00');
-                const diffTime = currentBase.getTime() - anchor.getTime();
-                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                const cycleOffset = diffDays % 21;
-                return cycleOffset >= 0 ? cycleOffset : 21 + cycleOffset;
-            };
-
-            const cycleStart = new Date(baseDate);
-            cycleStart.setDate(cycleStart.getDate() - getAnchorOffsetDays(baseDate));
-
-            const days = Array.from({ length: 21 }).map((_, i) => {
-                const d = new Date(cycleStart);
-                d.setDate(d.getDate() + i);
-                return d;
-            });
-
-            const getShift = (workerName, workerEmail, dateObj) => {
-                const dateStr = formatLocalYYYYMMDD(dateObj);
-                return shifts.find(s => s.date === dateStr && (
-                    s.worker === 'All' || s.workerEmail === 'all' || 
-                    (s.workerEmail && s.workerEmail.toLowerCase() === workerEmail?.toLowerCase()) || 
-                    (s.worker && s.worker.toLowerCase() === workerName?.toLowerCase())
-                ));
-            };
-
-            return (
-                <div className="bg-white sm:rounded-xl shadow-sm sm:border border-gray-200 overflow-hidden">
-                    <div className="flex justify-between items-center p-2 sm:p-4 bg-gray-50 border-b">
-                        <button onClick={() => setBaseDate(new Date(baseDate.setDate(baseDate.getDate() - 21)))} className="p-1 sm:p-2 bg-white border rounded shadow-sm hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-left"></i></button>
-                        <div className="font-black text-gray-800 text-xs sm:text-lg tracking-widest uppercase">
-                            {days[0].toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} - {days[20].toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </div>
-                        <button onClick={() => setBaseDate(new Date(baseDate.setDate(baseDate.getDate() + 21)))} className="p-1 sm:p-2 bg-white border rounded shadow-sm hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-right"></i></button>
-                    </div>
-                    
-                    <div className="overflow-x-auto">
-                        <div className="min-w-[900px]">
-                            <table className="w-full text-sm text-left whitespace-nowrap border-collapse">
-                                <thead className="bg-slate-500 text-white uppercase text-[10px] font-black tracking-wider">
-                                    <tr>
-                                        <th className="px-4 py-2 border-r border-slate-600 sticky left-0 bg-slate-600 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Staff Member</th>
-                                        <th className="px-2 py-2 text-center border-r border-slate-600 bg-slate-600 z-10 w-20">Cycle Hrs</th>
-                                        {days.map((day, i) => (
-                                            <th key={i} className={`px-1 py-2 text-center border-r border-slate-600 min-w-[65px] ${day.getDay() === 0 || day.getDay() === 6 ? 'text-red-300' : ''}`}>
-                                                <div>{day.toLocaleDateString('en-GB', { weekday: 'short' })}</div>
-                                                <div className="text-xs mt-0.5">{day.getDate()}</div>
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200">
-                                    {staff.sort((a,b) => a.name.localeCompare(b.name)).map(employee => {
-                                        let totalHours = 0;
-                                        // Calculate total hours first
-                                        days.forEach(day => {
-                                            const shift = getShift(employee.name, employee.email, day);
-                                            if (shift) totalHours += calculateShiftHours(shift.startTime, shift.endTime);
-                                        });
-
-                                        return (
-                                            <tr key={employee.id} className="hover:bg-blue-50/50 group">
-                                                <td className="px-4 py-3 border-r font-bold text-gray-800 sticky left-0 bg-white group-hover:bg-blue-50 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
-                                                    {employee.name}
-                                                </td>
-                                                <td className="px-2 py-3 text-center font-black text-teal-700 bg-teal-50/30 border-r">
-                                                    {totalHours > 0 ? totalHours.toFixed(1) : '-'}
-                                                </td>
-                                                {days.map((day, i) => {
-                                                    const shift = getShift(employee.name, employee.email, day);
-                                                    const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-                                                    const isToday = formatLocalYYYYMMDD(day) === formatLocalYYYYMMDD(new Date());
-
-                                                    return (
-                                                        <td key={i} onClick={() => shift && onShiftClick(shift)} className={`p-1 border-r align-top ${shift ? 'cursor-pointer hover:bg-blue-100' : ''} ${isWeekend && !shift ? 'bg-gray-50' : ''} ${isToday ? 'border-b-2 border-b-teal-500' : ''}`}>
-                                                            {shift ? (
-                                                                <div className="bg-teal-50 text-teal-800 text-[10px] font-bold p-1 rounded border border-teal-200 h-full flex flex-col justify-center items-center shadow-sm min-h-[50px]">
-                                                                    <div className="leading-none">{shift.startTime.replace(':','')}</div>
-                                                                    <div className="leading-none mt-0.5 mb-1">{shift.endTime.replace(':','')}</div>
-                                                                    <div className="text-[8px] text-teal-600 uppercase tracking-wider truncate max-w-[55px]">{shift.location}</div>
-                                                                </div>
-                                                            ) : null}
-                                                        </td>
-                                                    );
-                                                })}
-                                            </tr>
-                                        );
-                                    })}
-                                    {staff.length === 0 && (
-                                        <tr>
-                                            <td colSpan={23} className="p-8 text-center text-gray-400 font-medium">No staff added yet.</td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        function ManageView({ shifts, staff, userRole, db }) {
-            const emptyShift = { date: '', startTime: '', endTime: '', location: '', role: '', worker: '', workerEmail: '' };
-            const [newShift, setNewShift] = useState(emptyShift);
-            const [editingId, setEditingId] = useState(null);
-            const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-            
-            const [newStaffName, setNewStaffName] = useState('');
-            const [newStaffEmail, setNewStaffEmail] = useState('');
-            const [confirmStaffId, setConfirmStaffId] = useState(null);
-            const [editingStaffId, setEditingStaffId] = useState(null);
-            const [editStaffData, setEditStaffData] = useState({ name: '', email: '' });
-
-            const [calendarBase, setCalendarBase] = useState(new Date());
-            const [error, setError] = useState('');
-            
-            if (userRole !== 'admin') return (
-                <div className="p-12 text-center flex flex-col items-center justify-center">
-                    <i className="fa-solid fa-shield-halved text-5xl text-red-400 mb-4"></i>
-                    <h2 className="text-xl font-bold text-gray-800">Access Denied</h2>
-                    <p className="text-sm text-gray-500 mt-2">Only administrators can manage the schedule.</p>
-                </div>
-            );
-
-            const handleSaveShift = async () => {
-                setError('');
-                if(!newShift.date || !newShift.startTime || !newShift.endTime || !newShift.worker) {
-                    setError("Please fill out Date, Times, and Worker Name.");
-                    return;
-                }
-                try {
-                    if (editingId) {
-                        await updateDoc(doc(db, "shifts", editingId), newShift);
-                        setEditingId(null);
-                    } else {
-                        await addDoc(collection(db, "shifts"), newShift);
-                    }
-                    setNewShift({ ...newShift, date: '', startTime: '', endTime: '' });
-                } catch(err) {
-                    setError(err.message);
-                }
-            };
-
-            const handleEditShift = (shift) => {
-                setNewShift(shift);
-                setEditingId(shift.id);
-                setConfirmDeleteId(null);
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            };
-
-            const handleAddStaff = async () => {
-                if(!newStaffName.trim() || !newStaffEmail.trim()) {
-                    setError("Staff name and email are required.");
-                    return;
-                }
-                try {
-                    await addDoc(collection(db, "staff"), { name: newStaffName.trim(), email: newStaffEmail.trim() });
-                    setNewStaffName('');
-                    setNewStaffEmail('');
-                    setError('');
-                } catch(err) {
-                    setError("Failed to add staff: " + err.message);
-                }
-            };
-
-            const handleSaveStaffEdit = async (id) => {
-                if(!editStaffData.name.trim() || !editStaffData.email.trim()) return;
-                try {
-                    await updateDoc(doc(db, "staff", id), { name: editStaffData.name.trim(), email: editStaffData.email.trim() });
-                    const oldStaff = staff.find(s => s.id === id);
-                    if (oldStaff && oldStaff.email !== editStaffData.email) {
-                        const shiftsToUpdate = shifts.filter(s => s.workerEmail === oldStaff.email);
-                        shiftsToUpdate.forEach(async (shift) => {
-                            await updateDoc(doc(db, "shifts", shift.id), {
-                                workerName: editStaffData.name.trim(),
-                                workerEmail: editStaffData.email.trim()
-                            });
-                        });
-                    }
-                    setEditingStaffId(null);
-                } catch(err) {
-                    setError("Failed to update staff: " + err.message);
-                }
-            };
-
-            const getQuickPickDays = () => {
-                const days = [];
-                let d = new Date(calendarBase.getFullYear(), calendarBase.getMonth(), 1);
-                d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1));
-                for(let i=0; i<35; i++) {
-                    days.push(new Date(d));
-                    d.setDate(d.getDate() + 1);
-                }
-                return days;
-            };
-
-            const hasShiftOnDate = (dateObj) => {
-                if (!newShift.workerEmail && !newShift.worker) return false;
-                const dateStr = formatLocalYYYYMMDD(dateObj);
-                return shifts.some(s => s.date === dateStr && (s.workerEmail === newShift.workerEmail || s.worker === newShift.worker));
-            };
-
-            return (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl mx-auto p-4 sm:p-0">
-                    
-                    {/* Forms Column */}
-                    <div className="lg:col-span-1 space-y-6">
-                        <div className={`bg-white p-5 rounded-xl border shadow-sm transition-all ${editingId ? 'ring-2 ring-teal-500' : ''}`}>
-                            <h2 className="text-sm font-black text-gray-800 mb-4 border-b pb-2 uppercase tracking-widest flex items-center justify-between">
-                                {editingId ? 'Edit Existing Shift' : 'Create New Shift'}
-                                {editingId && <button onClick={() => {setEditingId(null); setNewShift(emptyShift);}} className="text-xs text-gray-400 hover:text-red-500 font-normal bg-gray-100 px-2 py-1 rounded">Cancel Edit</button>}
-                            </h2>
-                            
-                            {error && <div className="bg-red-50 text-red-600 p-2 text-xs rounded mb-4 font-bold border border-red-100">{error}</div>}
-                            
-                            <div className="space-y-3">
-                                <div>
-                                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 flex justify-between">Worker <button type="button" onClick={() => setNewShift(emptyShift)} className="text-[9px] hover:text-teal-600 underline">Clear Form</button></label>
-                                    <select className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none font-bold text-teal-800" value={newShift.workerEmail || newShift.worker} onChange={e => {
-                                        const val = e.target.value;
-                                        if (val === 'All') {
-                                            setNewShift({...newShift, workerEmail: 'all', worker: 'All'});
-                                        } else {
-                                            const s = staff.find(st => st.email === val || st.name === val);
-                                            setNewShift({...newShift, workerEmail: s?.email || val, worker: s?.name || val});
-                                        }
-                                    }}>
-                                        <option value="">-- Select Staff --</option>
-                                        <option value="All">All Staff (Everyone)</option>
-                                        {staff.map(s => <option key={s.id} value={s.email || s.name}>{s.name}</option>)}
-                                    </select>
-                                </div>
-
-                                {/* QUICK PICK CALENDAR */}
-                                {newShift.worker && newShift.worker !== 'All' && (
-                                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 my-2 shadow-inner">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <button type="button" onClick={() => setCalendarBase(new Date(calendarBase.getFullYear(), calendarBase.getMonth()-1, 1))} className="text-blue-600 hover:text-blue-800 px-2"><i className="fa-solid fa-chevron-left"></i></button>
-                                            <div className="text-xs font-bold text-blue-800 uppercase tracking-widest">{calendarBase.toLocaleDateString('en-GB', { month: 'short', year: 'numeric'})}</div>
-                                            <button type="button" onClick={() => setCalendarBase(new Date(calendarBase.getFullYear(), calendarBase.getMonth()+1, 1))} className="text-blue-600 hover:text-blue-800 px-2"><i className="fa-solid fa-chevron-right"></i></button>
-                                        </div>
-                                        <div className="grid grid-cols-7 gap-1 text-center">
-                                            {['M','T','W','T','F','S','S'].map((d,i)=><div key={i} className="text-[10px] font-bold text-blue-400">{d}</div>)}
-                                            {getQuickPickDays().map((d, i) => {
-                                                const dateStr = formatLocalYYYYMMDD(d);
-                                                const isSelected = newShift.date === dateStr;
-                                                const hasShift = hasShiftOnDate(d);
-                                                const isCurrentMonth = d.getMonth() === calendarBase.getMonth();
-                                                
-                                                return (
-                                                    <button 
-                                                        key={i} 
-                                                        type="button"
-                                                        onClick={() => setNewShift({...newShift, date: dateStr})}
-                                                        className={`w-full aspect-square flex flex-col items-center justify-center rounded text-xs font-bold relative transition-colors ${!isCurrentMonth ? 'text-gray-300' : ''} ${isSelected ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-blue-100 text-gray-700 bg-white border border-blue-50'}`}
-                                                    >
-                                                        {d.getDate()}
-                                                        {hasShift && <div className={`w-1 h-1 rounded-full absolute bottom-1 ${isSelected ? 'bg-white' : 'bg-blue-500'}`}></div>}
-                                                    </button>
-                                                )
-                                            })}
-                                        </div>
-                                        <div className="text-center mt-2 text-[9px] text-blue-600 italic uppercase">Tap a day to auto-fill the date below.</div>
-                                    </div>
-                                )}
-
-                                <div>
-                                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Date</label>
-                                    <input type="date" className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.date} onChange={e => setNewShift({...newShift, date: e.target.value})} />
-                                </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Start Time</label>
-                                        <input type="time" className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.startTime} onChange={e => setNewShift({...newShift, startTime: e.target.value})} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">End Time</label>
-                                        <input type="time" className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.endTime} onChange={e => setNewShift({...newShift, endTime: e.target.value})} />
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Location Code</label>
-                                        <input type="text" placeholder="e.g. TNT" className="w-full p-2 border border-gray-200 rounded text-sm uppercase focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.location} onChange={e => setNewShift({...newShift, location: e.target.value.toUpperCase()})} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Role / Dept</label>
-                                        <input type="text" placeholder="e.g. MPS" className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.role} onChange={e => setNewShift({...newShift, role: e.target.value})} />
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <button onClick={handleSaveShift} className={`mt-5 w-full text-white p-3 rounded font-black uppercase tracking-widest shadow-md transition-all active:scale-95 ${editingId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-teal-600 hover:bg-teal-700'}`}>
-                                {editingId ? 'Update Shift' : 'Publish Shift'}
-                            </button>
-                        </div>
-
-                        <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-sm">
-                            <h2 className="text-sm font-black text-gray-800 mb-3 uppercase tracking-widest flex items-center gap-2"><i className="fa-solid fa-user-plus"></i> Staff Directory</h2>
-                            <div className="flex flex-col gap-2 mb-4">
-                                <input type="text" placeholder="New employee name..." className="w-full p-2 border border-gray-300 rounded text-sm outline-none focus:border-teal-500" value={newStaffName} onChange={e => setNewStaffName(e.target.value)} />
-                                <input type="email" placeholder="Employee email (login)..." className="w-full p-2 border border-gray-300 rounded text-sm outline-none focus:border-teal-500" value={newStaffEmail} onChange={e => setNewStaffEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddStaff()} />
-                                <button onClick={handleAddStaff} className="bg-gray-800 text-white px-3 py-2 rounded text-xs font-bold hover:bg-black w-full shadow-sm">Add Staff</button>
-                            </div>
-                            <div className="flex flex-col gap-2">
-                                {staff.map(s => (
-                                    <div key={s.id} className="bg-white border border-gray-200 p-2 rounded shadow-sm flex flex-col gap-2">
-                                        {editingStaffId === s.id ? (
-                                            <div className="flex flex-col gap-2">
-                                                <input type="text" className="p-1.5 border border-gray-300 rounded text-xs w-full outline-none focus:border-teal-500 font-bold" value={editStaffData.name} onChange={e => setEditStaffData({...editStaffData, name: e.target.value})} placeholder="Name" />
-                                                <input type="email" className="p-1.5 border border-gray-300 rounded text-xs w-full outline-none focus:border-teal-500 font-semibold text-teal-700" value={editStaffData.email} onChange={e => setEditStaffData({...editStaffData, email: e.target.value})} placeholder="Email" />
-                                                <div className="flex gap-2 mt-1">
-                                                    <button onClick={() => handleSaveStaffEdit(s.id)} className="bg-teal-600 text-white px-3 py-1.5 rounded text-[10px] font-bold uppercase w-full hover:bg-teal-700">Save</button>
-                                                    <button onClick={() => setEditingStaffId(null)} className="bg-gray-200 text-gray-700 px-3 py-1.5 rounded text-[10px] font-bold uppercase w-full hover:bg-gray-300">Cancel</button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="flex justify-between items-center w-full">
-                                                <div className="flex-1 min-w-0 pr-2">
-                                                    <div className="text-xs font-bold text-gray-800 truncate">{s.name}</div>
-                                                    <div className="text-[10px] text-gray-500 truncate font-semibold">{s.email || 'No email assigned'}</div>
-                                                </div>
-                                                <div className="flex items-center gap-1 shrink-0">
-                                                    <button onClick={() => { setEditingStaffId(s.id); setEditStaffData({name: s.name, email: s.email || ''}); }} className="p-1.5 text-gray-400 hover:text-teal-600 bg-gray-50 rounded hover:bg-teal-50 transition-colors"><i className="fa-solid fa-pen-to-square"></i></button>
-                                                    {confirmStaffId === s.id ? (
-                                                        <div className="flex items-center gap-1 bg-red-50 rounded px-2 py-1 border border-red-100">
-                                                            <button onClick={() => deleteDoc(doc(db, "staff", s.id))} className="text-[10px] font-bold text-red-600 hover:underline">Yes</button>
-                                                            <span className="text-gray-300">|</span>
-                                                            <button onClick={() => setConfirmStaffId(null)} className="text-[10px] font-bold text-gray-500 hover:underline">No</button>
-                                                        </div>
-                                                    ) : (
-                                                        <button onClick={() => setConfirmStaffId(s.id)} className="p-1.5 text-gray-400 hover:text-red-500 bg-gray-50 rounded hover:bg-red-50 transition-colors"><i className="fa-solid fa-trash"></i></button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                                {staff.length === 0 && <span className="text-xs text-gray-400 italic text-center p-2">No staff added.</span>}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Database Column */}
-                    <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col h-[600px]">
-                        <div className="bg-gray-50 p-4 border-b">
-                            <h3 className="font-black text-gray-800 uppercase tracking-widest">Active Shift Database</h3>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                            {shifts.length === 0 ? <p className="text-sm text-gray-400 text-center py-10 font-medium">No shifts found in database.</p> : null}
-                            {shifts.sort((a,b) => parseLocalYYYYMMDD(b.date) - parseLocalYYYYMMDD(a.date)).map(s => (
-                                <div key={s.id} className={`flex flex-col sm:flex-row justify-between sm:items-center p-4 border rounded-lg transition-colors ${editingId === s.id ? 'bg-orange-50 border-orange-200' : 'hover:bg-gray-50 border-gray-100'}`}>
-                                    <div className="flex items-center gap-4 mb-3 sm:mb-0">
-                                        <div className="bg-gray-100 text-gray-600 font-bold px-3 py-2 rounded text-sm font-mono border w-28 text-center">{s.date}</div>
-                                        <div>
-                                            <div className="font-black text-teal-800 text-lg">{s.workerName || s.worker}</div>
-                                            <div className="text-xs text-gray-500 font-bold mt-0.5">
-                                                {s.startTime} - {s.endTime} <span className="mx-1">•</span> <span className="text-gray-800 uppercase">{s.location}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2 justify-end items-center">
-                                        <button onClick={() => handleEditShift(s)} className="flex items-center gap-1 bg-white border border-gray-200 text-gray-600 hover:text-teal-600 hover:border-teal-300 px-3 py-1.5 rounded text-xs font-bold transition-all shadow-sm">
-                                            <i className="fa-solid fa-pen-to-square"></i> Edit
-                                        </button>
-                                        
-                                        {confirmDeleteId === s.id ? (
-                                            <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded px-2 py-1 shadow-sm">
-                                                <span className="text-[10px] font-bold text-red-600 uppercase">Delete?</span>
-                                                <button onClick={() => deleteDoc(doc(db, "shifts", s.id))} className="text-xs font-bold text-red-700 hover:underline">Yes</button>
-                                                <span className="text-gray-300">|</span>
-                                                <button onClick={() => setConfirmDeleteId(null)} className="text-xs font-bold text-gray-500 hover:underline">No</button>
-                                            </div>
-                                        ) : (
-                                            <button onClick={() => setConfirmDeleteId(s.id)} className="flex items-center gap-1 bg-white border border-red-100 text-red-500 hover:bg-red-50 px-3 py-1.5 rounded text-xs font-bold transition-all shadow-sm">
-                                                <i className="fa-solid fa-trash"></i>
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        // --- MAIN APP COMPONENT ---
-        function MyShiftsApp() {
-            const [user, setUser] = useState(null);
-            const [userData, setUserData] = useState(null);
-            const [activeTab, setActiveTab] = useState('ROSTER');
-            const [shifts, setShifts] = useState([]);
-            const [staff, setStaff] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [baseDate, setBaseDate] = useState(new Date('2026-06-08T00:00:00')); // Default anchor
-            const [upgradeCode, setUpgradeCode] = useState('');
-            const [selectedShift, setSelectedShift] = useState(null);
-
-            useEffect(() => {
-                const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-                    setUser(currentUser);
-                    if (currentUser) {
-                        try {
-                            const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-                            if (userDoc.exists()) setUserData(userDoc.data());
-                            else setUserData({ name: currentUser.email, role: 'employee', email: currentUser.email });
-                        } catch (e) { console.error(e); }
-                    } else {
-                        setUserData(null);
-                    }
-                    setLoading(false);
-                });
-                return () => unsubscribe();
-            }, []);
-
-            useEffect(() => {
-                if (!user) return;
-                const shiftSub = onSnapshot(collection(db, "shifts"), (snapshot) => {
-                    setShifts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                });
-                const staffSub = onSnapshot(collection(db, "staff"), (snapshot) => {
-                    setStaff(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                });
-                return () => { shiftSub(); staffSub(); };
-            }, [user]);
-
-            const handleUpgradeToAdmin = async () => {
-                if (upgradeCode === 'ADMIN2026') {
-                    await setDoc(doc(db, "users", user.uid), { ...userData, role: 'admin' }, { merge: true });
-                    setUserData({ ...userData, role: 'admin' });
-                    setUpgradeCode('');
-                } else alert('Invalid Code');
-            };
-
-            if (loading) return <div className="h-screen flex items-center justify-center text-teal-600 font-bold animate-pulse">Loading System...</div>;
-            if (!user) return <AuthScreen />;
-
-            return (
-                <div className="max-w-5xl mx-auto bg-white min-h-screen font-sans text-gray-800 sm:shadow-2xl relative pb-20 sm:pb-0">
-                    <div className="flex justify-between items-center px-4 py-4 bg-teal-700 text-white shadow-md">
-                        <h1 className="text-xl font-black tracking-wider flex items-center gap-2"><i className="fa-regular fa-calendar-check"></i> MYSHIFTS</h1>
-                        <div className="flex items-center gap-4">
-                            {userData?.role !== 'admin' && (
-                                <div className="hidden sm:flex items-center gap-2 bg-teal-800 p-1.5 rounded border border-teal-600">
-                                    <input type="password" placeholder="Admin Code" className="w-24 text-xs p-1 text-gray-900 rounded outline-none" value={upgradeCode} onChange={e => setUpgradeCode(e.target.value)} />
-                                    <button onClick={handleUpgradeToAdmin} className="text-xs font-bold px-2 hover:text-teal-200">Upgrade</button>
-                                </div>
-                            )}
-                            <div className="text-right hidden sm:block">
-                                <div className="text-sm font-bold">{userData?.name}</div>
-                                <div className="text-xs text-teal-200 uppercase tracking-widest">{userData?.role}</div>
-                            </div>
-                            <button onClick={() => signOut(auth)} className="text-xs px-3 py-1.5 bg-teal-800 rounded hover:bg-teal-900 font-bold transition-colors border border-teal-600">Sign Out</button>
-                        </div>
-                    </div>
-
-                    <div className="flex bg-gray-100 border-b shadow-sm overflow-x-auto hide-scrollbar sticky top-0 z-40">
-                        {[
-                            { id: 'MONTH', icon: 'fa-calendar-days', label: 'Month' },
-                            { id: 'ROSTER', icon: 'fa-table-cells', label: 'Roster' },
-                            { id: 'DAY', icon: 'fa-calendar-day', label: 'Day List' },
-                            { id: 'TEAM', icon: 'fa-users', label: 'Shift List' },
-                            userData?.role === 'admin' ? { id: 'MANAGE', icon: 'fa-user-tie', label: 'Manage' } : null
-                        ].filter(Boolean).map(tab => (
-                            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center justify-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-bold uppercase tracking-wider transition-colors border-b-4 ${activeTab === tab.id ? 'border-teal-600 text-teal-700 bg-white' : 'border-transparent text-gray-500 hover:text-teal-600 hover:bg-gray-50'}`}>
-                                <i className={`fa-solid ${tab.icon}`}></i> {tab.label}
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="p-0 sm:p-4 bg-gray-50/50 min-h-[calc(100vh-140px)]">
-                        {activeTab === 'MONTH' && <MonthView shifts={shifts} baseDate={baseDate} setBaseDate={setBaseDate} userName={userData?.name} userEmail={user?.email} onShiftClick={setSelectedShift} />}
-                        {activeTab === 'ROSTER' && <RosterGrid shifts={shifts} baseDate={baseDate} setBaseDate={setBaseDate} userName={userData?.name} userEmail={user?.email} onShiftClick={setSelectedShift} />}
-                        {activeTab === 'DAY' && <DayView shifts={shifts} onShiftClick={setSelectedShift} />}
-                        {activeTab === 'TEAM' && <ShiftListView shifts={shifts} staff={staff} onShiftClick={setSelectedShift} />}
-                        {activeTab === 'MANAGE' && userData?.role === 'admin' && <ManageView shifts={shifts} staff={staff} userRole={userData?.role} db={db} />}
-                    </div>
-
-                    {selectedShift && <ShiftDetailsModal shift={selectedShift} onClose={() => setSelectedShift(null)} />}
-                </div>
-            );
-        }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<MyShiftsApp />);
-    </script>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import { initializeApp } from "firebase/app";
+        import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
+
+        const { useState, useEffect } = React;
+
+        // --- FIREBASE CONFIGURATION ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMoeSoLfsNgcopCH76m2wyHYgHnd9aiyM",
+            authDomain: "myshifts-daf0d.firebaseapp.com",
+            projectId: "myshifts-daf0d",
+            storageBucket: "myshifts-daf0d.firebasestorage.app",
+            messagingSenderId: "651463733952",
+            appId: "1:651463733952:web:80ad8813b209ee18627325",
+            measurementId: "G-599ZPDXQV1"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // --- UTILITIES ---
+        const formatLocalYYYYMMDD = (dateObj) => {
+            if (!dateObj) return '';
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        };
+
+        const parseLocalYYYYMMDD = (dateStr) => {
+            if (!dateStr) return new Date();
+            const [y, m, d] = dateStr.split('-').map(Number);
+            return new Date(y, m - 1, d);
+        };
+
+        const calculateShiftHours = (start, end) => {
+            if (!start || !end) return 0;
+            const [h1, m1] = start.split(':').map(Number);
+            const [h2, m2] = end.split(':').map(Number);
+            let startMin = h1 * 60 + m1;
+            let endMin = h2 * 60 + m2;
+            if (endMin <= startMin) endMin += 24 * 60; 
+            return (endMin - startMin) / 60;
+        };
+
+        const isShiftForUser = (shift, userEmail, userName) => {
+            if (shift.workerEmail === 'all' || shift.worker === 'All') return true;
+            if (shift.workerEmail && userEmail && shift.workerEmail.toLowerCase() === userEmail.toLowerCase()) return true;
+            if (shift.worker && userName && shift.worker.toLowerCase() === userName.toLowerCase()) return true;
+            return false;
+        };
+
+        // --- COMPONENTS ---
+
+        function AuthScreen() {
+            const [isLogin, setIsLogin] = useState(true);
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [name, setName] = useState('');
+            const [role, setRole] = useState('employee');
+            const [adminCode, setAdminCode] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleAuth = async (e) => {
+                e.preventDefault();
+                setError('');
+                setLoading(true);
+                try {
+                    if (isLogin) {
+                        await signInWithEmailAndPassword(auth, email, password);
+                    } else {
+                        if (role === 'admin' && adminCode !== 'ADMIN2026') throw new Error("Invalid Admin Passcode.");
+                        if (!name) throw new Error("Full Name is required.");
+                        const cred = await createUserWithEmailAndPassword(auth, email, password);
+                        await setDoc(doc(db, "users", cred.user.uid), { name, email, role });
+                    }
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-teal-800 p-4">
+                    <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md">
+                        <div className="text-center mb-8">
+                            <i className="fa-regular fa-calendar-check text-5xl text-teal-600 mb-3"></i>
+                            <h1 className="text-3xl font-black text-gray-800 tracking-tight">MyShifts</h1>
+                            <p className="text-gray-500 mt-2 text-sm">{isLogin ? 'Welcome back, please sign in.' : 'Create your account to view shifts.'}</p>
+                        </div>
+                        {error && <div className="bg-red-50 text-red-600 p-3 rounded mb-4 text-sm font-medium border border-red-200">{error}</div>}
+                        <form onSubmit={handleAuth} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Email</label>
+                                <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3 border border-gray-300 rounded focus:ring-2 focus:ring-teal-500 outline-none" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Password</label>
+                                <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded focus:ring-2 focus:ring-teal-500 outline-none" />
+                            </div>
+                            {!isLogin && (
+                                <div className="space-y-4 bg-gray-50 p-4 border rounded">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Full Name</label>
+                                        <input type="text" required={!isLogin} value={name} onChange={e => setName(e.target.value)} className="w-full p-3 border border-gray-300 rounded focus:ring-2 focus:ring-teal-500 outline-none" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Account Role</label>
+                                        <select value={role} onChange={e => setRole(e.target.value)} className="w-full p-3 border border-gray-300 rounded focus:ring-2 focus:ring-teal-500 outline-none bg-white">
+                                            <option value="employee">Standard Employee</option>
+                                            <option value="admin">Administrator</option>
+                                        </select>
+                                    </div>
+                                    {role === 'admin' && (
+                                        <div className="bg-red-50 p-3 rounded border border-red-200">
+                                            <label className="block text-xs font-bold text-red-700 uppercase tracking-widest mb-1">Admin Passcode</label>
+                                            <input type="password" required={role === 'admin'} value={adminCode} onChange={e => setAdminCode(e.target.value)} className="w-full p-3 border border-red-300 rounded focus:ring-2 focus:ring-red-500 outline-none font-mono" placeholder="Secret Code" />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            <button type="submit" disabled={loading} className="w-full bg-teal-600 text-white font-bold py-3 rounded hover:bg-teal-700 transition-colors shadow-md disabled:opacity-50">
+                                {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
+                            </button>
+                        </form>
+                        <div className="text-center mt-6">
+                            <button onClick={() => setIsLogin(!isLogin)} className="text-teal-600 text-sm font-semibold hover:underline">
+                                {isLogin ? "Need an account? Sign up" : "Already have an account? Sign in"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function ShiftDetailsModal({ shift, onClose }) {
+            if (!shift) return null;
+            const hours = calculateShiftHours(shift.startTime, shift.endTime);
+            const dateObj = parseLocalYYYYMMDD(shift.date);
+            const dateStr = dateObj.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+            return (
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity" onClick={onClose}>
+                    <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="bg-teal-700 text-white p-4 flex justify-between items-center shadow-inner">
+                            <h3 className="font-black tracking-wider uppercase text-sm">Shift Details</h3>
+                            <button onClick={onClose} className="text-teal-200 hover:text-white transition-colors"><i className="fa-solid fa-xmark text-xl"></i></button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="text-center border-b border-gray-100 pb-5">
+                                <div className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-2">{dateStr}</div>
+                                <div className="text-xl font-bold text-teal-700 mb-2">{shift.workerName || shift.worker || 'Open Shift'}</div>
+                                <div className="text-4xl font-black text-gray-800 tracking-tighter flex items-center justify-center gap-2">
+                                    {shift.startTime} <span className="text-teal-400 text-2xl">→</span> {shift.endTime}
+                                </div>
+                                <div className="mt-3 inline-block bg-teal-50 text-teal-800 border border-teal-200 px-4 py-1.5 rounded-full font-black text-sm shadow-sm">
+                                    {hours.toFixed(2)} Hours
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 pt-2">
+                                <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-center shadow-sm">
+                                    <i className="fa-solid fa-location-dot text-gray-300 mb-1.5 block text-xl"></i>
+                                    <div className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">Location</div>
+                                    <div className="font-black text-gray-800 text-lg truncate px-1">{shift.location || 'N/A'}</div>
+                                </div>
+                                <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-center shadow-sm">
+                                    <i className="fa-solid fa-user-tag text-gray-300 mb-1.5 block text-xl"></i>
+                                    <div className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">Role</div>
+                                    <div className="font-black text-gray-800 text-lg truncate px-1" title={shift.role}>{shift.role || 'N/A'}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function RosterGrid({ shifts, baseDate, setBaseDate, userName, userEmail, onShiftClick }) {
+            const getAnchorOffsetDays = (currentBase) => {
+                const anchor = new Date('2026-06-08T00:00:00');
+                const cbMidnight = new Date(currentBase.getFullYear(), currentBase.getMonth(), currentBase.getDate());
+                const diffTime = cbMidnight.getTime() - anchor.getTime();
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                const cycleOffset = diffDays % 21;
+                return cycleOffset >= 0 ? cycleOffset : 21 + cycleOffset;
+            };
+
+            const cycleStart = new Date(baseDate);
+            cycleStart.setDate(cycleStart.getDate() - getAnchorOffsetDays(baseDate));
+
+            const calendarDays = Array.from({ length: 21 }).map((_, i) => {
+                const d = new Date(cycleStart);
+                d.setDate(d.getDate() + i);
+                return d;
+            });
+
+            const weeks = [calendarDays.slice(0, 7), calendarDays.slice(7, 14), calendarDays.slice(14, 21)];
+            const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+            const getShiftForDay = (dateObj) => {
+                const formattedDate = formatLocalYYYYMMDD(dateObj);
+                return shifts.find(s => s.date === formattedDate && isShiftForUser(s, userEmail, userName));
+            };
+
+            const formatDate = (date) => date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            let totalCycleHours = 0;
+
+            return (
+                <div className="w-full bg-white sm:border rounded sm:shadow-sm overflow-hidden">
+                    <div className="p-2 sm:p-4 border-b flex justify-between items-center bg-gray-50">
+                        <button onClick={() => { const d = new Date(baseDate); d.setDate(d.getDate() - 21); setBaseDate(d); }} className="p-1 sm:p-2 bg-white border rounded shadow-sm hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-left"></i></button>
+                        <div className="text-xs sm:text-lg font-black text-gray-800 uppercase tracking-widest">
+                            {formatDate(calendarDays[0])} - {formatDate(calendarDays[20])}
+                        </div>
+                        <button onClick={() => { const d = new Date(baseDate); d.setDate(d.getDate() + 21); setBaseDate(d); }} className="p-1 sm:p-2 bg-white border rounded shadow-sm hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-right"></i></button>
+                    </div>
+
+                    <div className="overflow-hidden sm:overflow-x-auto">
+                        <div className="w-full sm:min-w-[700px]">
+                            <div className="grid grid-cols-[25px_repeat(7,minmax(0,1fr))] sm:grid-cols-[40px_repeat(7,minmax(0,1fr))] bg-slate-500 text-white font-bold text-center text-[10px] sm:text-sm py-1 sm:py-2">
+                                <div></div>
+                                {dayLabels.map(day => <div key={day} className="truncate px-0.5">{day}</div>)}
+                            </div>
+                            {weeks.map((week, wIndex) => {
+                                const firstDay = new Date(week[0].getFullYear(), 0, 1);
+                                const daysToFirstDay = Math.floor((week[0] - firstDay) / (24 * 60 * 60 * 1000));
+                                const weekNum = Math.ceil((week[0].getDay() + 1 + daysToFirstDay) / 7);
+
+                                return (
+                                    <div key={wIndex} className="grid grid-cols-[25px_repeat(7,minmax(0,1fr))] sm:grid-cols-[40px_repeat(7,minmax(0,1fr))] border-b border-gray-200">
+                                        <div className="bg-gray-50 flex items-center justify-center text-gray-400 text-[9px] sm:text-xs font-bold border-r border-gray-200">{weekNum}</div>
+                                        {week.map((day, dIndex) => {
+                                            const shift = getShiftForDay(day);
+                                            if (shift) totalCycleHours += calculateShiftHours(shift.startTime, shift.endTime);
+                                            const isWeekend = dIndex === 5 || dIndex === 6;
+                                            const isToday = formatLocalYYYYMMDD(new Date()) === formatLocalYYYYMMDD(day);
+
+                                            return (
+                                                <div key={dIndex} onClick={() => shift && onShiftClick(shift)} className={`min-h-[70px] sm:min-h-[100px] border-r border-gray-200 flex flex-col ${shift ? 'bg-[#e0f2fe] cursor-pointer hover:bg-blue-100 transition-colors' : 'bg-white'} ${isToday ? 'ring-2 ring-teal-500 inset-0 relative z-10' : ''}`}>
+                                                    <div className={`text-right p-0.5 sm:p-1 text-[10px] sm:text-sm ${isWeekend ? 'text-red-600 font-bold' : 'text-gray-500'}`}>{day.getDate()}</div>
+                                                    {shift && (
+                                                        <div className="flex-1 flex flex-col items-center justify-center p-0.5 sm:p-1 text-gray-900 pb-1 sm:pb-2 overflow-hidden">
+                                                            <span className="font-extrabold text-[11px] sm:text-[15px] leading-none sm:leading-tight">{shift.startTime.replace(':','')}</span>
+                                                            <span className="font-extrabold text-[11px] sm:text-[15px] leading-none sm:leading-tight mb-0.5 sm:mb-1">{shift.endTime.replace(':','')}</span>
+                                                            <span className="text-[8px] sm:text-[10px] uppercase tracking-tighter sm:tracking-wider text-gray-600 truncate w-full text-center px-0.5">{shift.location}</span>
+                                                            <span className="hidden sm:block text-[10px] leading-tight text-center px-1 text-gray-500 truncate w-full">{shift.role}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    <div className="p-2 sm:p-4 bg-teal-50 border-t text-right text-xs sm:text-base font-black text-teal-800">
+                        Cycle Total: {totalCycleHours.toFixed(2)} Hours
+                    </div>
+                </div>
+            );
+        }
+
+        function MonthView({ shifts, baseDate, setBaseDate, userName, userEmail, onShiftClick }) {
+            const getDaysInMonth = () => {
+                const year = baseDate.getFullYear();
+                const month = baseDate.getMonth();
+                const date = new Date(year, month, 1);
+                const days = [];
+                let startDay = date.getDay() === 0 ? 6 : date.getDay() - 1;
+                for(let i = 0; i < startDay; i++) days.push(null);
+                while (date.getMonth() === month) {
+                    days.push(new Date(date));
+                    date.setDate(date.getDate() + 1);
+                }
+                return days;
+            };
+
+            const days = getDaysInMonth();
+            const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+            const getShiftForDay = (dateObj) => {
+                if(!dateObj) return null;
+                const formattedDate = formatLocalYYYYMMDD(dateObj);
+                return shifts.find(s => s.date === formattedDate && isShiftForUser(s, userEmail, userName));
+            };
+
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            let totalMonthHours = 0;
+
+            return (
+                <div className="w-full bg-white sm:border rounded sm:shadow-sm overflow-hidden">
+                    <div className="p-2 sm:p-4 border-b flex justify-between items-center bg-gray-50">
+                        <button onClick={() => setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1))} className="p-1 sm:p-2 bg-white border rounded shadow-sm hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-left"></i></button>
+                        <div className="text-xs sm:text-lg font-black text-gray-800 uppercase tracking-widest text-center">
+                            <div>{monthNames[baseDate.getMonth()]} {baseDate.getFullYear()}</div>
+                        </div>
+                        <button onClick={() => setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 1))} className="p-1 sm:p-2 bg-white border rounded shadow-sm hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-right"></i></button>
+                    </div>
+
+                    <div className="overflow-hidden sm:overflow-x-auto">
+                        <div className="w-full sm:min-w-[700px]">
+                            <div className="grid grid-cols-[25px_repeat(7,minmax(0,1fr))] sm:grid-cols-[40px_repeat(7,minmax(0,1fr))] bg-slate-500 text-white font-bold text-center text-[10px] sm:text-sm py-1 sm:py-2">
+                                <div></div>
+                                {dayLabels.map(day => <div key={day} className="truncate px-0.5">{day}</div>)}
+                            </div>
+                            
+                            {/* We calculate weeks dynamically for the month view just like the roster view */}
+                            {(() => {
+                                const weeks = [];
+                                let currentWeek = [];
+                                days.forEach((day, i) => {
+                                    currentWeek.push(day);
+                                    if (currentWeek.length === 7 || i === days.length - 1) {
+                                        // Pad the last week if it doesn't end on a Sunday
+                                        while(currentWeek.length < 7) currentWeek.push(null);
+                                        weeks.push(currentWeek);
+                                        currentWeek = [];
+                                    }
+                                });
+
+                                return weeks.map((week, wIndex) => {
+                                    // Find a valid day in the week to determine the week number
+                                    const validDay = week.find(d => d !== null);
+                                    let weekNum = "";
+                                    if (validDay) {
+                                        const firstDay = new Date(validDay.getFullYear(), 0, 1);
+                                        const daysToFirstDay = Math.floor((validDay - firstDay) / (24 * 60 * 60 * 1000));
+                                        weekNum = Math.ceil((validDay.getDay() + 1 + daysToFirstDay) / 7);
+                                    }
+
+                                    return (
+                                        <div key={wIndex} className="grid grid-cols-[25px_repeat(7,minmax(0,1fr))] sm:grid-cols-[40px_repeat(7,minmax(0,1fr))] border-b border-gray-200">
+                                            <div className="bg-gray-50 flex items-center justify-center text-gray-400 text-[9px] sm:text-xs font-bold border-r border-gray-200">{weekNum}</div>
+                                            {week.map((day, dIndex) => {
+                                                const shift = getShiftForDay(day);
+                                                if (shift) totalMonthHours += calculateShiftHours(shift.startTime, shift.endTime);
+                                                const isWeekend = dIndex === 5 || dIndex === 6;
+                                                
+                                                if(!day) return <div key={`empty-${wIndex}-${dIndex}`} className="min-h-[70px] sm:min-h-[100px] border-r border-gray-100 bg-gray-50"></div>;
+
+                                                const isToday = formatLocalYYYYMMDD(new Date()) === formatLocalYYYYMMDD(day);
+
+                                                return (
+                                                    <div key={dIndex} onClick={() => shift && onShiftClick(shift)} className={`min-h-[70px] sm:min-h-[100px] border-r border-gray-200 flex flex-col ${shift ? 'bg-[#e0f2fe] cursor-pointer hover:bg-blue-100 transition-colors' : 'bg-white'} ${isToday ? 'ring-2 ring-teal-500 inset-0 relative z-10' : ''}`}>
+                                                        <div className={`text-right p-0.5 sm:p-1 text-[10px] sm:text-sm ${isWeekend ? 'text-red-600 font-bold' : 'text-gray-500'}`}>{day.getDate()}</div>
+                                                        {shift && (
+                                                            <div className="flex-1 flex flex-col items-center justify-center p-0.5 sm:p-1 text-gray-900 pb-1 sm:pb-2 overflow-hidden">
+                                                                <span className="font-extrabold text-[11px] sm:text-[15px] leading-none sm:leading-tight">{shift.startTime.replace(':','')}</span>
+                                                                <span className="font-extrabold text-[11px] sm:text-[15px] leading-none sm:leading-tight mb-0.5 sm:mb-1">{shift.endTime.replace(':','')}</span>
+                                                                <span className="text-[8px] sm:text-[10px] uppercase tracking-tighter sm:tracking-wider text-gray-600 truncate w-full text-center px-0.5">{shift.location}</span>
+                                                                <span className="hidden sm:block text-[10px] leading-tight text-center px-1 text-gray-500 truncate w-full">{shift.role}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    );
+                                });
+                            })()}
+                        </div>
+                    </div>
+
+                    <div className="p-2 sm:p-4 bg-teal-50 border-t text-right text-xs sm:text-base font-black text-teal-800">
+                        Monthly Total: {totalMonthHours.toFixed(2)} Hours
+                    </div>
+                </div>
+            );
+        }
+
+        function DayView({ shifts, onShiftClick }) {
+            const [selectedDate, setSelectedDate] = useState(formatLocalYYYYMMDD(new Date()));
+
+            const dayShifts = shifts
+                .filter(s => s.date === selectedDate)
+                .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+
+            const dateObj = parseLocalYYYYMMDD(selectedDate);
+            const formattedDate = dateObj.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+            const prevDay = () => {
+                const d = parseLocalYYYYMMDD(selectedDate);
+                d.setDate(d.getDate() - 1);
+                setSelectedDate(formatLocalYYYYMMDD(d));
+            };
+
+            const nextDay = () => {
+                const d = parseLocalYYYYMMDD(selectedDate);
+                d.setDate(d.getDate() + 1);
+                setSelectedDate(formatLocalYYYYMMDD(d));
+            };
+
+            return (
+                <div className="bg-white border sm:rounded-xl shadow-sm overflow-hidden">
+                    <div className="bg-gray-50 p-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center w-full sm:w-auto justify-between gap-4">
+                            <button onClick={prevDay} className="px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-left"></i></button>
+                            <h3 className="font-black text-gray-800 uppercase tracking-widest text-sm text-center flex-1 sm:flex-none">{formattedDate}</h3>
+                            <button onClick={nextDay} className="px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-right"></i></button>
+                        </div>
+                        <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="w-full sm:w-auto p-2 border border-gray-300 rounded text-sm font-bold text-gray-700 outline-none focus:border-teal-500" />
+                    </div>
+                    <div className="divide-y divide-gray-100">
+                        {dayShifts.length === 0 ? (
+                            <div className="p-12 text-center text-gray-400 font-medium bg-white">No shifts scheduled for this day.</div>
+                        ) : (
+                            dayShifts.map(shift => {
+                                const hours = calculateShiftHours(shift.startTime, shift.endTime);
+                                return (
+                                    <div key={shift.id} onClick={() => onShiftClick(shift)} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-blue-50 cursor-pointer transition-colors group">
+                                        <div className="flex items-center gap-4">
+                                            <div className="bg-teal-50 border border-teal-100 text-teal-800 rounded p-2 text-center shadow-sm min-w-[80px] group-hover:bg-white transition-colors">
+                                                <div className="font-black text-lg leading-none">{shift.startTime}</div>
+                                                <div className="text-[10px] font-bold text-gray-500 mt-1">TO {shift.endTime}</div>
+                                            </div>
+                                            <div>
+                                                <div className="font-black text-lg text-gray-800">{shift.workerName || shift.worker}</div>
+                                                <div className="text-sm text-gray-500 flex items-center gap-2 mt-0.5">
+                                                    <span className="font-bold text-teal-700 uppercase">{shift.location}</span> • {shift.role}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="mt-3 sm:mt-0 text-right sm:text-left">
+                                            <span className="inline-block bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-1 rounded border">{hours.toFixed(1)} hrs</span>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- NEW HORIZONTAL SHIFT LIST (TEAM VIEW) ---
+        function ShiftListView({ shifts, staff, onShiftClick }) {
+            const [baseDate, setBaseDate] = useState(new Date());
+
+            const getAnchorOffsetDays = (currentBase) => {
+                const anchor = new Date('2026-06-08T00:00:00');
+                const cbMidnight = new Date(currentBase.getFullYear(), currentBase.getMonth(), currentBase.getDate());
+                const diffTime = cbMidnight.getTime() - anchor.getTime();
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                const cycleOffset = diffDays % 21;
+                return cycleOffset >= 0 ? cycleOffset : 21 + cycleOffset;
+            };
+
+            const cycleStart = new Date(baseDate);
+            cycleStart.setDate(cycleStart.getDate() - getAnchorOffsetDays(baseDate));
+
+            const days = Array.from({ length: 21 }).map((_, i) => {
+                const d = new Date(cycleStart);
+                d.setDate(d.getDate() + i);
+                return d;
+            });
+
+            const getShift = (workerName, workerEmail, dateObj) => {
+                const dateStr = formatLocalYYYYMMDD(dateObj);
+                return shifts.find(s => s.date === dateStr && (
+                    s.worker === 'All' || s.workerEmail === 'all' || 
+                    (s.workerEmail && s.workerEmail.toLowerCase() === workerEmail?.toLowerCase()) || 
+                    (s.worker && s.worker.toLowerCase() === workerName?.toLowerCase())
+                ));
+            };
+
+            return (
+                <div className="bg-white sm:rounded-xl shadow-sm sm:border border-gray-200 overflow-hidden">
+                    <div className="flex justify-between items-center p-2 sm:p-4 bg-gray-50 border-b">
+                        <button onClick={() => { const d = new Date(baseDate); d.setDate(d.getDate() - 21); setBaseDate(d); }} className="p-1 sm:p-2 bg-white border rounded shadow-sm hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-left"></i></button>
+                        <div className="font-black text-gray-800 text-xs sm:text-lg tracking-widest uppercase">
+                            {days[0].toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} - {days[20].toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </div>
+                        <button onClick={() => { const d = new Date(baseDate); d.setDate(d.getDate() + 21); setBaseDate(d); }} className="p-1 sm:p-2 bg-white border rounded shadow-sm hover:bg-gray-100 font-bold"><i className="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                    
+                    <div className="overflow-x-auto">
+                        <div className="min-w-[900px]">
+                            <table className="w-full text-sm text-left whitespace-nowrap border-collapse">
+                                <thead className="bg-slate-500 text-white uppercase text-[10px] font-black tracking-wider">
+                                    <tr>
+                                        <th className="px-4 py-2 border-r border-slate-600 sticky left-0 bg-slate-600 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Staff Member</th>
+                                        <th className="px-2 py-2 text-center border-r border-slate-600 bg-slate-600 z-10 w-20">Cycle Hrs</th>
+                                        {days.map((day, i) => (
+                                            <th key={i} className={`px-1 py-2 text-center border-r border-slate-600 min-w-[65px] ${day.getDay() === 0 || day.getDay() === 6 ? 'text-red-300' : ''}`}>
+                                                <div>{day.toLocaleDateString('en-GB', { weekday: 'short' })}</div>
+                                                <div className="text-xs mt-0.5">{day.getDate()}</div>
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {staff.sort((a,b) => a.name.localeCompare(b.name)).map(employee => {
+                                        let totalHours = 0;
+                                        // Calculate total hours first
+                                        days.forEach(day => {
+                                            const shift = getShift(employee.name, employee.email, day);
+                                            if (shift) totalHours += calculateShiftHours(shift.startTime, shift.endTime);
+                                        });
+
+                                        return (
+                                            <tr key={employee.id} className="hover:bg-blue-50/50 group">
+                                                <td className="px-4 py-3 border-r font-bold text-gray-800 sticky left-0 bg-white group-hover:bg-blue-50 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                                                    {employee.name}
+                                                </td>
+                                                <td className="px-2 py-3 text-center font-black text-teal-700 bg-teal-50/30 border-r">
+                                                    {totalHours > 0 ? totalHours.toFixed(1) : '-'}
+                                                </td>
+                                                {days.map((day, i) => {
+                                                    const shift = getShift(employee.name, employee.email, day);
+                                                    const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                                                    const isToday = formatLocalYYYYMMDD(day) === formatLocalYYYYMMDD(new Date());
+
+                                                    return (
+                                                        <td key={i} onClick={() => shift && onShiftClick(shift)} className={`p-1 border-r align-top ${shift ? 'cursor-pointer hover:bg-blue-100' : ''} ${isWeekend && !shift ? 'bg-gray-50' : ''} ${isToday ? 'border-b-2 border-b-teal-500' : ''}`}>
+                                                            {shift ? (
+                                                                <div className="bg-teal-50 text-teal-800 text-[10px] font-bold p-1 rounded border border-teal-200 h-full flex flex-col justify-center items-center shadow-sm min-h-[50px]">
+                                                                    <div className="leading-none">{shift.startTime.replace(':','')}</div>
+                                                                    <div className="leading-none mt-0.5 mb-1">{shift.endTime.replace(':','')}</div>
+                                                                    <div className="text-[8px] text-teal-600 uppercase tracking-wider truncate max-w-[55px]">{shift.location}</div>
+                                                                </div>
+                                                            ) : null}
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
+                                        );
+                                    })}
+                                    {staff.length === 0 && (
+                                        <tr>
+                                            <td colSpan={23} className="p-8 text-center text-gray-400 font-medium">No staff added yet.</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function ManageView({ shifts, staff, userRole, db }) {
+            const emptyShift = { date: '', startTime: '', endTime: '', location: '', role: '', worker: '', workerEmail: '' };
+            const [newShift, setNewShift] = useState(emptyShift);
+            const [editingId, setEditingId] = useState(null);
+            const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+            
+            const [newStaffName, setNewStaffName] = useState('');
+            const [newStaffEmail, setNewStaffEmail] = useState('');
+            const [confirmStaffId, setConfirmStaffId] = useState(null);
+            const [editingStaffId, setEditingStaffId] = useState(null);
+            const [editStaffData, setEditStaffData] = useState({ name: '', email: '' });
+
+            const [calendarBase, setCalendarBase] = useState(new Date());
+            const [error, setError] = useState('');
+            
+            if (userRole !== 'admin') return (
+                <div className="p-12 text-center flex flex-col items-center justify-center">
+                    <i className="fa-solid fa-shield-halved text-5xl text-red-400 mb-4"></i>
+                    <h2 className="text-xl font-bold text-gray-800">Access Denied</h2>
+                    <p className="text-sm text-gray-500 mt-2">Only administrators can manage the schedule.</p>
+                </div>
+            );
+
+            const handleSaveShift = async () => {
+                setError('');
+                if(!newShift.date || !newShift.startTime || !newShift.endTime || !newShift.worker) {
+                    setError("Please fill out Date, Times, and Worker Name.");
+                    return;
+                }
+                try {
+                    if (editingId) {
+                        await updateDoc(doc(db, "shifts", editingId), newShift);
+                        setEditingId(null);
+                    } else {
+                        await addDoc(collection(db, "shifts"), newShift);
+                    }
+                    setNewShift({ ...newShift, date: '', startTime: '', endTime: '' });
+                } catch(err) {
+                    setError(err.message);
+                }
+            };
+
+            const handleEditShift = (shift) => {
+                setNewShift(shift);
+                setEditingId(shift.id);
+                setConfirmDeleteId(null);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            const handleAddStaff = async () => {
+                if(!newStaffName.trim() || !newStaffEmail.trim()) {
+                    setError("Staff name and email are required.");
+                    return;
+                }
+                try {
+                    await addDoc(collection(db, "staff"), { name: newStaffName.trim(), email: newStaffEmail.trim() });
+                    setNewStaffName('');
+                    setNewStaffEmail('');
+                    setError('');
+                } catch(err) {
+                    setError("Failed to add staff: " + err.message);
+                }
+            };
+
+            const handleSaveStaffEdit = async (id) => {
+                if(!editStaffData.name.trim() || !editStaffData.email.trim()) return;
+                try {
+                    await updateDoc(doc(db, "staff", id), { name: editStaffData.name.trim(), email: editStaffData.email.trim() });
+                    const oldStaff = staff.find(s => s.id === id);
+                    if (oldStaff && oldStaff.email !== editStaffData.email) {
+                        const shiftsToUpdate = shifts.filter(s => s.workerEmail === oldStaff.email);
+                        shiftsToUpdate.forEach(async (shift) => {
+                            await updateDoc(doc(db, "shifts", shift.id), {
+                                workerName: editStaffData.name.trim(),
+                                workerEmail: editStaffData.email.trim()
+                            });
+                        });
+                    }
+                    setEditingStaffId(null);
+                } catch(err) {
+                    setError("Failed to update staff: " + err.message);
+                }
+            };
+
+            const getQuickPickDays = () => {
+                const days = [];
+                let d = new Date(calendarBase.getFullYear(), calendarBase.getMonth(), 1);
+                d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1));
+                for(let i=0; i<35; i++) {
+                    days.push(new Date(d));
+                    d.setDate(d.getDate() + 1);
+                }
+                return days;
+            };
+
+            const hasShiftOnDate = (dateObj) => {
+                if (!newShift.workerEmail && !newShift.worker) return false;
+                const dateStr = formatLocalYYYYMMDD(dateObj);
+                return shifts.some(s => s.date === dateStr && (s.workerEmail === newShift.workerEmail || s.worker === newShift.worker));
+            };
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl mx-auto p-4 sm:p-0">
+                    
+                    {/* Forms Column */}
+                    <div className="lg:col-span-1 space-y-6">
+                        <div className={`bg-white p-5 rounded-xl border shadow-sm transition-all ${editingId ? 'ring-2 ring-teal-500' : ''}`}>
+                            <h2 className="text-sm font-black text-gray-800 mb-4 border-b pb-2 uppercase tracking-widest flex items-center justify-between">
+                                {editingId ? 'Edit Existing Shift' : 'Create New Shift'}
+                                {editingId && <button onClick={() => {setEditingId(null); setNewShift(emptyShift);}} className="text-xs text-gray-400 hover:text-red-500 font-normal bg-gray-100 px-2 py-1 rounded">Cancel Edit</button>}
+                            </h2>
+                            
+                            {error && <div className="bg-red-50 text-red-600 p-2 text-xs rounded mb-4 font-bold border border-red-100">{error}</div>}
+                            
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 flex justify-between">Worker <button type="button" onClick={() => setNewShift(emptyShift)} className="text-[9px] hover:text-teal-600 underline">Clear Form</button></label>
+                                    <select className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none font-bold text-teal-800" value={newShift.workerEmail || newShift.worker} onChange={e => {
+                                        const val = e.target.value;
+                                        if (val === 'All') {
+                                            setNewShift({...newShift, workerEmail: 'all', worker: 'All'});
+                                        } else {
+                                            const s = staff.find(st => st.email === val || st.name === val);
+                                            setNewShift({...newShift, workerEmail: s?.email || val, worker: s?.name || val});
+                                        }
+                                    }}>
+                                        <option value="">-- Select Staff --</option>
+                                        <option value="All">All Staff (Everyone)</option>
+                                        {staff.map(s => <option key={s.id} value={s.email || s.name}>{s.name}</option>)}
+                                    </select>
+                                </div>
+
+                                {/* QUICK PICK CALENDAR */}
+                                {newShift.worker && newShift.worker !== 'All' && (
+                                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 my-2 shadow-inner">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <button type="button" onClick={() => setCalendarBase(new Date(calendarBase.getFullYear(), calendarBase.getMonth()-1, 1))} className="text-blue-600 hover:text-blue-800 px-2"><i className="fa-solid fa-chevron-left"></i></button>
+                                            <div className="text-xs font-bold text-blue-800 uppercase tracking-widest">{calendarBase.toLocaleDateString('en-GB', { month: 'short', year: 'numeric'})}</div>
+                                            <button type="button" onClick={() => setCalendarBase(new Date(calendarBase.getFullYear(), calendarBase.getMonth()+1, 1))} className="text-blue-600 hover:text-blue-800 px-2"><i className="fa-solid fa-chevron-right"></i></button>
+                                        </div>
+                                        <div className="grid grid-cols-7 gap-1 text-center">
+                                            {['M','T','W','T','F','S','S'].map((d,i)=><div key={i} className="text-[10px] font-bold text-blue-400">{d}</div>)}
+                                            {getQuickPickDays().map((d, i) => {
+                                                const dateStr = formatLocalYYYYMMDD(d);
+                                                const isSelected = newShift.date === dateStr;
+                                                const hasShift = hasShiftOnDate(d);
+                                                const isCurrentMonth = d.getMonth() === calendarBase.getMonth();
+                                                
+                                                return (
+                                                    <button 
+                                                        key={i} 
+                                                        type="button"
+                                                        onClick={() => setNewShift({...newShift, date: dateStr})}
+                                                        className={`w-full aspect-square flex flex-col items-center justify-center rounded text-xs font-bold relative transition-colors ${!isCurrentMonth ? 'text-gray-300' : ''} ${isSelected ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-blue-100 text-gray-700 bg-white border border-blue-50'}`}
+                                                    >
+                                                        {d.getDate()}
+                                                        {hasShift && <div className={`w-1 h-1 rounded-full absolute bottom-1 ${isSelected ? 'bg-white' : 'bg-blue-500'}`}></div>}
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                        <div className="text-center mt-2 text-[9px] text-blue-600 italic uppercase">Tap a day to auto-fill the date below.</div>
+                                    </div>
+                                )}
+
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Date</label>
+                                    <input type="date" className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.date} onChange={e => setNewShift({...newShift, date: e.target.value})} />
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Start Time</label>
+                                        <input type="time" className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.startTime} onChange={e => setNewShift({...newShift, startTime: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">End Time</label>
+                                        <input type="time" className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.endTime} onChange={e => setNewShift({...newShift, endTime: e.target.value})} />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Location Code</label>
+                                        <input type="text" placeholder="e.g. TNT" className="w-full p-2 border border-gray-200 rounded text-sm uppercase focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.location} onChange={e => setNewShift({...newShift, location: e.target.value.toUpperCase()})} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Role / Dept</label>
+                                        <input type="text" placeholder="e.g. MPS" className="w-full p-2 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none" value={newShift.role} onChange={e => setNewShift({...newShift, role: e.target.value})} />
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <button onClick={handleSaveShift} className={`mt-5 w-full text-white p-3 rounded font-black uppercase tracking-widest shadow-md transition-all active:scale-95 ${editingId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-teal-600 hover:bg-teal-700'}`}>
+                                {editingId ? 'Update Shift' : 'Publish Shift'}
+                            </button>
+                        </div>
+
+                        <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-sm">
+                            <h2 className="text-sm font-black text-gray-800 mb-3 uppercase tracking-widest flex items-center gap-2"><i className="fa-solid fa-user-plus"></i> Staff Directory</h2>
+                            <div className="flex flex-col gap-2 mb-4">
+                                <input type="text" placeholder="New employee name..." className="w-full p-2 border border-gray-300 rounded text-sm outline-none focus:border-teal-500" value={newStaffName} onChange={e => setNewStaffName(e.target.value)} />
+                                <input type="email" placeholder="Employee email (login)..." className="w-full p-2 border border-gray-300 rounded text-sm outline-none focus:border-teal-500" value={newStaffEmail} onChange={e => setNewStaffEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddStaff()} />
+                                <button onClick={handleAddStaff} className="bg-gray-800 text-white px-3 py-2 rounded text-xs font-bold hover:bg-black w-full shadow-sm">Add Staff</button>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                {staff.map(s => (
+                                    <div key={s.id} className="bg-white border border-gray-200 p-2 rounded shadow-sm flex flex-col gap-2">
+                                        {editingStaffId === s.id ? (
+                                            <div className="flex flex-col gap-2">
+                                                <input type="text" className="p-1.5 border border-gray-300 rounded text-xs w-full outline-none focus:border-teal-500 font-bold" value={editStaffData.name} onChange={e => setEditStaffData({...editStaffData, name: e.target.value})} placeholder="Name" />
+                                                <input type="email" className="p-1.5 border border-gray-300 rounded text-xs w-full outline-none focus:border-teal-500 font-semibold text-teal-700" value={editStaffData.email} onChange={e => setEditStaffData({...editStaffData, email: e.target.value})} placeholder="Email" />
+                                                <div className="flex gap-2 mt-1">
+                                                    <button onClick={() => handleSaveStaffEdit(s.id)} className="bg-teal-600 text-white px-3 py-1.5 rounded text-[10px] font-bold uppercase w-full hover:bg-teal-700">Save</button>
+                                                    <button onClick={() => setEditingStaffId(null)} className="bg-gray-200 text-gray-700 px-3 py-1.5 rounded text-[10px] font-bold uppercase w-full hover:bg-gray-300">Cancel</button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="flex justify-between items-center w-full">
+                                                <div className="flex-1 min-w-0 pr-2">
+                                                    <div className="text-xs font-bold text-gray-800 truncate">{s.name}</div>
+                                                    <div className="text-[10px] text-gray-500 truncate font-semibold">{s.email || 'No email assigned'}</div>
+                                                </div>
+                                                <div className="flex items-center gap-1 shrink-0">
+                                                    <button onClick={() => { setEditingStaffId(s.id); setEditStaffData({name: s.name, email: s.email || ''}); }} className="p-1.5 text-gray-400 hover:text-teal-600 bg-gray-50 rounded hover:bg-teal-50 transition-colors"><i className="fa-solid fa-pen-to-square"></i></button>
+                                                    {confirmStaffId === s.id ? (
+                                                        <div className="flex items-center gap-1 bg-red-50 rounded px-2 py-1 border border-red-100">
+                                                            <button onClick={() => deleteDoc(doc(db, "staff", s.id))} className="text-[10px] font-bold text-red-600 hover:underline">Yes</button>
+                                                            <span className="text-gray-300">|</span>
+                                                            <button onClick={() => setConfirmStaffId(null)} className="text-[10px] font-bold text-gray-500 hover:underline">No</button>
+                                                        </div>
+                                                    ) : (
+                                                        <button onClick={() => setConfirmStaffId(s.id)} className="p-1.5 text-gray-400 hover:text-red-500 bg-gray-50 rounded hover:bg-red-50 transition-colors"><i className="fa-solid fa-trash"></i></button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                                {staff.length === 0 && <span className="text-xs text-gray-400 italic text-center p-2">No staff added.</span>}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Database Column */}
+                    <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col h-[600px]">
+                        <div className="bg-gray-50 p-4 border-b">
+                            <h3 className="font-black text-gray-800 uppercase tracking-widest">Active Shift Database</h3>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                            {shifts.length === 0 ? <p className="text-sm text-gray-400 text-center py-10 font-medium">No shifts found in database.</p> : null}
+                            {shifts.sort((a,b) => parseLocalYYYYMMDD(b.date) - parseLocalYYYYMMDD(a.date)).map(s => (
+                                <div key={s.id} className={`flex flex-col sm:flex-row justify-between sm:items-center p-4 border rounded-lg transition-colors ${editingId === s.id ? 'bg-orange-50 border-orange-200' : 'hover:bg-gray-50 border-gray-100'}`}>
+                                    <div className="flex items-center gap-4 mb-3 sm:mb-0">
+                                        <div className="bg-gray-100 text-gray-600 font-bold px-3 py-2 rounded text-sm font-mono border w-28 text-center">{s.date}</div>
+                                        <div>
+                                            <div className="font-black text-teal-800 text-lg">{s.workerName || s.worker}</div>
+                                            <div className="text-xs text-gray-500 font-bold mt-0.5">
+                                                {s.startTime} - {s.endTime} <span className="mx-1">•</span> <span className="text-gray-800 uppercase">{s.location}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 justify-end items-center">
+                                        <button onClick={() => handleEditShift(s)} className="flex items-center gap-1 bg-white border border-gray-200 text-gray-600 hover:text-teal-600 hover:border-teal-300 px-3 py-1.5 rounded text-xs font-bold transition-all shadow-sm">
+                                            <i className="fa-solid fa-pen-to-square"></i> Edit
+                                        </button>
+                                        
+                                        {confirmDeleteId === s.id ? (
+                                            <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded px-2 py-1 shadow-sm">
+                                                <span className="text-[10px] font-bold text-red-600 uppercase">Delete?</span>
+                                                <button onClick={() => deleteDoc(doc(db, "shifts", s.id))} className="text-xs font-bold text-red-700 hover:underline">Yes</button>
+                                                <span className="text-gray-300">|</span>
+                                                <button onClick={() => setConfirmDeleteId(null)} className="text-xs font-bold text-gray-500 hover:underline">No</button>
+                                            </div>
+                                        ) : (
+                                            <button onClick={() => setConfirmDeleteId(s.id)} className="flex items-center gap-1 bg-white border border-red-100 text-red-500 hover:bg-red-50 px-3 py-1.5 rounded text-xs font-bold transition-all shadow-sm">
+                                                <i className="fa-solid fa-trash"></i>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- MAIN APP COMPONENT ---
+        function MyShiftsApp() {
+            const [user, setUser] = useState(null);
+            const [userData, setUserData] = useState(null);
+            const [activeTab, setActiveTab] = useState('ROSTER');
+            const [shifts, setShifts] = useState([]);
+            const [staff, setStaff] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [baseDate, setBaseDate] = useState(new Date()); // Dynamic current cycle initialization
+            const [upgradeCode, setUpgradeCode] = useState('');
+            const [selectedShift, setSelectedShift] = useState(null);
+
+            useEffect(() => {
+                const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+                    setUser(currentUser);
+                    if (currentUser) {
+                        try {
+                            const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+                            if (userDoc.exists()) setUserData(userDoc.data());
+                            else setUserData({ name: currentUser.email, role: 'employee', email: currentUser.email });
+                        } catch (e) { console.error(e); }
+                    } else {
+                        setUserData(null);
+                    }
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            useEffect(() => {
+                if (!user) return;
+                const shiftSub = onSnapshot(collection(db, "shifts"), (snapshot) => {
+                    setShifts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                });
+                const staffSub = onSnapshot(collection(db, "staff"), (snapshot) => {
+                    setStaff(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                });
+                return () => { shiftSub(); staffSub(); };
+            }, [user]);
+
+            const handleUpgradeToAdmin = async () => {
+                if (upgradeCode === 'ADMIN2026') {
+                    await setDoc(doc(db, "users", user.uid), { ...userData, role: 'admin' }, { merge: true });
+                    setUserData({ ...userData, role: 'admin' });
+                    setUpgradeCode('');
+                } else alert('Invalid Code');
+            };
+
+            if (loading) return <div className="h-screen flex items-center justify-center text-teal-600 font-bold animate-pulse">Loading System...</div>;
+            if (!user) return <AuthScreen />;
+
+            return (
+                <div className="max-w-5xl mx-auto bg-white min-h-screen font-sans text-gray-800 sm:shadow-2xl relative pb-20 sm:pb-0">
+                    <div className="flex justify-between items-center px-4 py-4 bg-teal-700 text-white shadow-md">
+                        <h1 className="text-xl font-black tracking-wider flex items-center gap-2"><i className="fa-regular fa-calendar-check"></i> MYSHIFTS</h1>
+                        <div className="flex items-center gap-4">
+                            {userData?.role !== 'admin' && (
+                                <div className="hidden sm:flex items-center gap-2 bg-teal-800 p-1.5 rounded border border-teal-600">
+                                    <input type="password" placeholder="Admin Code" className="w-24 text-xs p-1 text-gray-900 rounded outline-none" value={upgradeCode} onChange={e => setUpgradeCode(e.target.value)} />
+                                    <button onClick={handleUpgradeToAdmin} className="text-xs font-bold px-2 hover:text-teal-200">Upgrade</button>
+                                </div>
+                            )}
+                            <div className="text-right hidden sm:block">
+                                <div className="text-sm font-bold">{userData?.name}</div>
+                                <div className="text-xs text-teal-200 uppercase tracking-widest">{userData?.role}</div>
+                            </div>
+                            <button onClick={() => signOut(auth)} className="text-xs px-3 py-1.5 bg-teal-800 rounded hover:bg-teal-900 font-bold transition-colors border border-teal-600">Sign Out</button>
+                        </div>
+                    </div>
+
+                    <div className="flex bg-gray-100 border-b shadow-sm overflow-x-auto hide-scrollbar sticky top-0 z-40">
+                        {[
+                            { id: 'MONTH', icon: 'fa-calendar-days', label: 'Month' },
+                            { id: 'ROSTER', icon: 'fa-table-cells', label: 'Roster' },
+                            { id: 'DAY', icon: 'fa-calendar-day', label: 'Day List' },
+                            { id: 'TEAM', icon: 'fa-users', label: 'Shift List' },
+                            userData?.role === 'admin' ? { id: 'MANAGE', icon: 'fa-user-tie', label: 'Manage' } : null
+                        ].filter(Boolean).map(tab => (
+                            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center justify-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-bold uppercase tracking-wider transition-colors border-b-4 ${activeTab === tab.id ? 'border-teal-600 text-teal-700 bg-white' : 'border-transparent text-gray-500 hover:text-teal-600 hover:bg-gray-50'}`}>
+                                <i className={`fa-solid ${tab.icon}`}></i> {tab.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="p-0 sm:p-4 bg-gray-50/50 min-h-[calc(100vh-140px)]">
+                        {activeTab === 'MONTH' && <MonthView shifts={shifts} baseDate={baseDate} setBaseDate={setBaseDate} userName={userData?.name} userEmail={user?.email} onShiftClick={setSelectedShift} />}
+                        {activeTab === 'ROSTER' && <RosterGrid shifts={shifts} baseDate={baseDate} setBaseDate={setBaseDate} userName={userData?.name} userEmail={user?.email} onShiftClick={setSelectedShift} />}
+                        {activeTab === 'DAY' && <DayView shifts={shifts} onShiftClick={setSelectedShift} />}
+                        {activeTab === 'TEAM' && <ShiftListView shifts={shifts} staff={staff} onShiftClick={setSelectedShift} />}
+                        {activeTab === 'MANAGE' && userData?.role === 'admin' && <ManageView shifts={shifts} staff={staff} userRole={userData?.role} db={db} />}
+                    </div>
+
+                    {selectedShift && <ShiftDetailsModal shift={selectedShift} onClose={() => setSelectedShift(null)} />}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<MyShiftsApp />);
+    </script>
 </body>
 </html>
